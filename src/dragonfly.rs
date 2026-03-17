@@ -1,3 +1,4 @@
+use crate::utils::error::Result;
 use futures::StreamExt;
 use redis::aio::MultiplexedConnection;
 use redis::sentinel::SentinelClient;

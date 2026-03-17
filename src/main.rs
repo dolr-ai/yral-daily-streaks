@@ -4,22 +4,16 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use config::AppConfig;
-use state::AppState;
+use yral_or_not::config::AppConfig;
+use yral_or_not::state::AppState;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
-use utils::error::*;
-
+use yral_or_not::utils::error::*;
 
 async fn main_impl() -> Result<()> {
     let conf = AppConfig::load()?;
 
     let state = Arc::new(AppState::new(&conf).await?);
-
-    // Sentry middleware
-    let sentry_tower_layer = ServiceBuilder::new()
-        .layer(NewSentryLayer::new_from_top())
-        .layer(SentryHttpLayer::with_transaction());
 
     // Build the application router with all routes defined here
     let app = Router::new()
@@ -46,7 +40,6 @@ async fn main_impl() -> Result<()> {
 }
 
 fn main() {
-
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

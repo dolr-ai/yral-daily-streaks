@@ -1,13 +1,12 @@
-
 use crate::auth::init_jwt;
 use crate::auth::JwtDetails;
 use crate::config::AppConfig;
 use crate::dragonfly::{
     get_ca_cert_pem, get_client_cert_pem, get_client_key_pem, init_dragonfly_redis, DragonflyPool,
 };
-use std::sync::Arc;
+use crate::utils::error::{Error, Result};
 use crate::utils::yral_auth_jwt::YralAuthJwt;
-
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {

@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use utoipa::ToSchema;
 use candid::Principal;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use thiserror::Error;
+use utoipa::ToSchema;
 
 #[derive(Deserialize, Serialize, Error, Debug, PartialEq, ToSchema)]
 #[non_exhaustive]
@@ -55,11 +55,8 @@ pub struct StreakData {
     pub user_name: String,
 
     #[serde(default)]
-    pub email: Option<String>,
+    pub current_streak: Option<String>,
 
     #[serde(default)]
-    pub signup_at: Option<i64>,
-
-    #[serde(default)]
-    pub is_migrated: bool,
+    pub last_checkin_date: Option<String>,
 }
