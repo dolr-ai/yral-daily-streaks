@@ -1,16 +1,17 @@
+use crate::error::{ApiError, ApiResult};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
+use ic_agent::export::PrincipalError;
+use jsonwebtoken::errors as jwt_errors;
 use redis::RedisError;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::{env::VarError, ops::Deref};
 use thiserror::Error;
 use utoipa::ToSchema;
-use jsonwebtoken::errors as jwt_errors;
-use serde_json;
-use ic_agent::export::PrincipalError;
 
 #[derive(Error, Debug, ToSchema)]
 pub enum Error {
@@ -20,9 +21,6 @@ pub enum Error {
     #[error("failed to load config {0}")]
     #[schema(value_type = ConfigErrorDetail)]
     Config(#[from] config::ConfigError),
-    #[error("{0}")]
-    #[schema(value_type = IdentityErrorDetail)]
-    Identity(#[from] yral_identity::Error),
     #[error("{0}")]
     #[schema(value_type = RedisErrorDetail)]
     Redis(#[from] RedisError),
@@ -36,8 +34,6 @@ pub enum Error {
     AuthTokenMissing,
     #[error("auth token invalid")]
     AuthTokenInvalid,
-    #[error("firebase api error {0}")]
-    FirebaseApiErr(String),
     #[error("unknown error {0}")]
     Unknown(String),
     #[error("Environment variable error: {0}")]
@@ -45,26 +41,81 @@ pub enum Error {
     EnvironmentVariable(#[from] VarError),
     #[error("Environment variable missing: {0}")]
     EnvironmentVariableMissing(String),
-    #[error("failed to mark user sessin as registered")]
-    UserAlreadyRegistered(String),
-    #[error("failed to initialize backend admin ic agent")]
-    BackendAdminIdentityInvalid(String),
     #[error("failed to parse principal {0}")]
     #[schema(value_type = PrincipalErrorDetail)]
     InvalidPrincipal(#[from] PrincipalError),
-    #[error("failed to update session: {0}")]
-    UpdateSession(String),
     #[error("swagger ui error {0}")]
     SwaggerUi(String),
     #[error("invalid username, must be 3-15 alphanumeric characters")]
     InvalidUsername,
-    #[error("duplicate username")]
-    DuplicateUsername,
     #[error("Invalid email")]
     InvalidEmail(String),
 }
 
+impl From<&Error> for ApiResult<()> {
+    fn from(value: &Error) -> Self {
+        let err = match value {
+            Error::IO(_) | Error::Config(_) => {
+                log::warn!("internal error {value}");
+                ApiError::Unknown("internal error, reported".into())
+            }
+            Error::Redis(e) => {
+                log::warn!("redis error {e}");
+                ApiError::Redis
+            }
+            Error::Deser(e) => {
+                log::warn!("deserialization error {e}");
+                ApiError::Deser
+            }
+            Error::Jwt(_) => ApiError::Jwt,
+            Error::AuthTokenMissing => ApiError::AuthTokenMissing,
+            Error::AuthTokenInvalid => ApiError::AuthToken,
+            Error::Unknown(e) => ApiError::Unknown(e.clone()),
+            Error::EnvironmentVariable(_) => ApiError::EnvironmentVariable,
+            Error::EnvironmentVariableMissing(_) => ApiError::EnvironmentVariableMissing,
+            Error::InvalidPrincipal(_) => ApiError::InvalidPrincipal,
+            Error::SwaggerUi(e) => {
+                log::warn!("swagger ui error {e}");
+                ApiError::Unknown(format!("Swagger UI error: {}", e))
+            }
+            Error::InvalidUsername => ApiError::InvalidUsername,
+            Error::InvalidEmail(email) => ApiError::InvalidEmail(email.clone()),
+        };
+        ApiResult::Err(err)
+    }
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+// Implement IntoResponse for axum error handling
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let api_error = Result::from(&self);
+        let status_code = self.status_code();
+
+        (status_code, Json(api_error)).into_response()
+    }
+}
+impl Error {
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            Error::IO(_)
+            | Error::Config(_)
+            | Error::Redis(_)
+            | Error::Deser(_)
+            | Error::Unknown(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::Jwt(_) | Error::AuthTokenInvalid | Error::AuthTokenMissing => {
+                StatusCode::UNAUTHORIZED
+            }
+            Error::EnvironmentVariable(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::EnvironmentVariableMissing(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::InvalidPrincipal(_) | Error::InvalidEmail(_) | Error::InvalidUsername => {
+                StatusCode::BAD_REQUEST
+            }
+            Error::SwaggerUi(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
 
 #[derive(Debug, ToSchema)]
 pub enum IOErrorData {
@@ -330,7 +381,6 @@ impl From<VarError> for VarErrorDetail {
     }
 }
 
-
 #[derive(Debug, ToSchema, Serialize)]
 pub struct PrincipalErrorDetail {
     #[schema(example = "BytesTooLong")]
@@ -372,4 +422,22 @@ impl From<PrincipalError> for PrincipalErrorDetail {
             },
         }
     }
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, ToSchema, Serialize, Deserialize)]
+pub struct ErrorWrapper<T: ToSchema> {
+    Err: T,
+}
+
+#[derive(Debug, ToSchema, Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct OkWrapper<T: ToSchema> {
+    Ok: T,
+}
+
+#[derive(Debug, ToSchema, Serialize, Deserialize)]
+#[allow(non_snake_case)]
+pub struct NullOk {
+    Ok: (),
 }

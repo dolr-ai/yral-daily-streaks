@@ -1,7 +1,4 @@
-use candid::Principal;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
 use thiserror::Error;
 use utoipa::ToSchema;
 
@@ -22,41 +19,24 @@ pub enum ApiError {
     AuthTokenMissing,
     #[error("failed to delete keys (redis)")]
     DeleteKeys,
-    #[error("streak data for principal not found")]
-    StreakDataNotFound,
     #[error("unknown: {0}")]
     Unknown(String),
     #[error("invalid email: {0}")]
     InvalidEmail(String),
+    #[error("device already registered")]
+    DeviceAlreadyRegistered,
     #[error("unauthorized")]
     Unauthorized,
     #[error("environment variable not found")]
     EnvironmentVariable,
     #[error("environment variable missing")]
     EnvironmentVariableMissing,
-    #[error("failed to mark user session as registered: {0}")]
-    UserAlreadyRegistered(String),
     #[error("invalid principal")]
     InvalidPrincipal,
     #[error("failed to update session: {0}")]
     UpdateSession(String),
     #[error("invalid username, must be 3-15 alphanumeric characters")]
     InvalidUsername,
-    #[error("duplicate username")]
-    DuplicateUsername,
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash, ToSchema)]
-pub struct StreakData {
-    #[schema(value_type = String)]
-    pub user_canister_id: Principal,
-    pub user_name: String,
-
-    #[serde(default)]
-    pub current_streak: Option<String>,
-
-    #[serde(default)]
-    pub last_checkin_date: Option<String>,
-}

@@ -1,11 +1,12 @@
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::consts::YRAL_AUTH_V2_ACCESS_TOKEN_ISS;
 
 use super::error::Error;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct YralAuthClaim {
     aud: String,
     exp: u64,

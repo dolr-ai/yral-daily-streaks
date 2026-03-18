@@ -4,10 +4,10 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use yral_or_not::config::AppConfig;
-use yral_or_not::state::AppState;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
+use yral_or_not::config::AppConfig;
+use yral_or_not::state::AppState;
 use yral_or_not::utils::error::*;
 
 async fn main_impl() -> Result<()> {

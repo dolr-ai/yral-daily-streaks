@@ -1,5 +1,3 @@
-use crate::auth::init_jwt;
-use crate::auth::JwtDetails;
 use crate::config::AppConfig;
 use crate::dragonfly::{
     get_ca_cert_pem, get_client_cert_pem, get_client_key_pem, init_dragonfly_redis, DragonflyPool,
@@ -11,7 +9,6 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AppState {
     pub dragonfly_redis: Arc<DragonflyPool>,
-    pub jwt_details: JwtDetails,
     pub yral_auth_jwt: YralAuthJwt,
 }
 
@@ -27,7 +24,6 @@ impl AppState {
                 client_key_bytes,
             )
             .await?,
-            jwt_details: init_jwt(app_config)?,
             yral_auth_jwt: YralAuthJwt::init(app_config.yral_auth_public_key.clone())?,
         })
     }
