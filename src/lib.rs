@@ -6,6 +6,7 @@ pub mod error;
 pub mod state;
 pub mod types;
 pub mod utils;
+pub mod auth;
 
 use crate::types::*;
 use axum::{
@@ -43,22 +44,20 @@ impl Modify for BearerAuth {
     paths(
         api::handlers::healthz,
         api::handlers::get_streak,
-        api::handlers::create_streak,
-        api::handlers::update_streak,
+        api::handlers::checkin,
         api::handlers::delete_streak
     ),
     components(
         schemas(
-            GetStreakRes, CreateStreakRes, UpdateStreakRes, DeleteStreakRes, YralAuthClaim
+            StreakResponse, DeleteStreakRes, YralAuthClaim
         )
     ),
     modifiers(&BearerAuth),
     tags(
+        (name = "Health", description = "Health check"),
         (name = "Get Steak", description = "Get streak count for logged in user"),
-        (name = "Create Streak", description = "Create a new streak for logged in user"),
-        (name = "Update Streak", description = "Update a streak for logged in user"),
-        (name = "Delete Streak", description = "Delete a streak for logged in user"),
-        (name = "Health", description = "Health check")
+        (name = "Checkin", description = "Checkin the streak for logged in user"),
+        (name = "Delete Streak", description = "Delete a streak for logged in user")
     ),
     info(
         title = "Daily Streaks API",

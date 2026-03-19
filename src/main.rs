@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use axum::{
-    routing::{delete, get, post, patch},
+    routing::{delete, get, patch, post},
     Router,
 };
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
+use yral_or_not::api::handlers::*;
 use yral_or_not::config::AppConfig;
 use yral_or_not::state::AppState;
 use yral_or_not::utils::error::*;
-use yral_or_not::api::handlers::*;
 use yral_or_not::{get_swagger, get_swagger_root};
 
 async fn main_impl() -> Result<()> {
@@ -21,9 +21,8 @@ async fn main_impl() -> Result<()> {
     let app = Router::new()
         // API routes
         .route("/streaks/{user_prinicipal}", get(get_streak))
-        .route("/streaks/{user_prinicipal}", post(create_streak))
-        .route("/streaks/{user_prinicipal}", patch(update_streak))
-        .route("/streaks/{user_prinicipal}", delete(delete_streak))  
+        .route("/streaks/{user_prinicipal}", post(checkin))
+        .route("/streaks/{user_prinicipal}", delete(delete_streak))
         // OpenAPI/Swagger UI routes
         .route("/explorer/{*tail}", get(get_swagger))
         .route("/explorer/", get(get_swagger_root))

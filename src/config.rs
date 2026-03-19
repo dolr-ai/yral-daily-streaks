@@ -8,6 +8,7 @@ use serde_with::serde_as;
 #[derive(Deserialize)]
 pub struct AppConfig {
     pub bind_address: SocketAddr,
+    pub jwt_public_key: String,
     pub yral_auth_public_key: String,
 }
 

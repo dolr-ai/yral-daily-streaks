@@ -1,8 +1,10 @@
+use crate::api::store::KvStore;
 use crate::state::AppState;
+use crate::types::DeleteStreakRes;
 use crate::utils::error::{Error, Result};
 use crate::{
     error::ApiResult,
-    types::CreateStreakRes,
+    types::StreakResponse,
     utils::error::{ErrorWrapper, NullOk, OkWrapper},
 };
 use axum::{
@@ -13,30 +15,8 @@ use axum::{
 };
 use candid::Principal;
 use std::sync::Arc;
+use chrono::{NaiveDate, Utc};
 
-#[utoipa::path(
-    post,
-    path = "/streak/{user_principal}",
-    params(
-        ("user_principal" = String, Path, description = "User principal ID")
-    ),
-    request_body = CreateStreakRes,
-    security(
-        ("bearer_auth" = [])
-    ),
-    responses(
-        (status = 200, description = "Created streak successfully", body = OkWrapper<CreateStreakRes>),
-        (status = 400, description = "Invalid request", body = ErrorWrapper<CreateStreakRes>),
-        (status = 401, description = "Unauthorized", body = ErrorWrapper<CreateStreakRes>),
-        (status = 500, description = "Internal server error", body = ErrorWrapper<CreateStreakRes>)
-    )
-)]
-pub async fn create_streak(
-    State(state): State<Arc<AppState>>,
-    Path(user_principal): Path<Principal>,
-) -> Result<Json<ApiResult<CreateStreakRes>>> {
-    todo!()
-}
 
 #[utoipa::path(
     get,
@@ -44,69 +24,117 @@ pub async fn create_streak(
     params(
         ("user_principal" = String, Path, description = "User principal ID")
     ),
-    request_body = CreateStreakRes,
+    request_body = StreakResponse,
     security(
         ("bearer_auth" = [])
     ),
     responses(
-        (status = 200, description = "Streak fetched successfully", body = OkWrapper<CreateStreakRes>),
-        (status = 400, description = "Invalid request", body = ErrorWrapper<CreateStreakRes>),
-        (status = 401, description = "Unauthorized", body = ErrorWrapper<CreateStreakRes>),
-        (status = 500, description = "Internal server error", body = ErrorWrapper<CreateStreakRes>)
+        (status = 200, description = "Streak fetched successfully", body = OkWrapper<StreakResponse>),
+        (status = 400, description = "Invalid request", body = ErrorWrapper<StreakResponse>),
+        (status = 401, description = "Unauthorized", body = ErrorWrapper<StreakResponse>),
+        (status = 500, description = "Internal server error", body = ErrorWrapper<StreakResponse>)
     )
 )]
 pub async fn get_streak(
     State(state): State<Arc<AppState>>,
     Path(user_principal): Path<Principal>,
-) -> Result<Json<ApiResult<CreateStreakRes>>> {
-    todo!()
+    headers: HeaderMap,
+) -> Result<Json<ApiResult<StreakResponse>>> {
+
+    let Some(auth_header) = headers.get("Authorization") else {
+        return Err(Error::AuthTokenMissing);
+    };
+
+    let auth_jwt_token = auth_header
+        .to_str()
+        .map_err(|_| Error::AuthTokenInvalid)?
+        .trim_start_matches("Bearer ");
+
+    let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
+    let response = get_streak_impl(&state.dragonfly_redis, user_principal).await.map_err(|e| {
+        e
+    })?;
+
+    Ok(Json(Ok(response)))
 }
 
 #[utoipa::path(
-    patch,
+    post,
     path = "/streak/{user_principal}",
     params(
         ("user_principal" = String, Path, description = "User principal ID")
     ),
-    request_body = CreateStreakRes,
+    request_body = StreakResponse,
     security(
         ("bearer_auth" = [])
     ),
     responses(
-        (status = 200, description = "Streak updated successfully", body = OkWrapper<CreateStreakRes>),
-        (status = 400, description = "Invalid request", body = ErrorWrapper<CreateStreakRes>),
-        (status = 401, description = "Unauthorized", body = ErrorWrapper<CreateStreakRes>),
-        (status = 500, description = "Internal server error", body = ErrorWrapper<CreateStreakRes>)
+        (status = 200, description = "Streak updated successfully", body = OkWrapper<StreakResponse>),
+        (status = 400, description = "Invalid request", body = ErrorWrapper<StreakResponse>),
+        (status = 401, description = "Unauthorized", body = ErrorWrapper<StreakResponse>),
+        (status = 500, description = "Internal server error", body = ErrorWrapper<StreakResponse>)
     )
 )]
-pub async fn update_streak(
+pub async fn checkin(
     State(state): State<Arc<AppState>>,
     Path(user_principal): Path<Principal>,
-) -> Result<Json<ApiResult<CreateStreakRes>>> {
-    todo!()
+    headers: HeaderMap,
+) -> Result<Json<ApiResult<StreakResponse>>> {
+    let Some(auth_header) = headers.get("Authorization") else {
+        return Err(Error::AuthTokenMissing);
+    };
+
+    let auth_jwt_token = auth_header
+        .to_str()
+        .map_err(|_| Error::AuthTokenInvalid)?
+        .trim_start_matches("Bearer ");
+
+    let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
+
+    let response = checkin_impl(&state.dragonfly_redis, user_principal).await.map_err(|e| {
+        e
+    })?;
+
+    Ok(Json(Ok(response)))
 }
+
 #[utoipa::path(
     delete,
     path = "/streak/{user_principal}",
     params(
         ("user_principal" = String, Path, description = "User principal ID")
     ),
-    request_body = CreateStreakRes,
+    request_body = StreakResponse,
     security(
         ("bearer_auth" = [])
     ),
     responses(
-        (status = 200, description = "Streak deleted successfully", body = OkWrapper<CreateStreakRes>),
-        (status = 400, description = "Invalid request", body = ErrorWrapper<CreateStreakRes>),
-        (status = 401, description = "Unauthorized", body = ErrorWrapper<CreateStreakRes>),
-        (status = 500, description = "Internal server error", body = ErrorWrapper<CreateStreakRes>)
+        (status = 200, description = "Streak deleted successfully", body = OkWrapper<StreakResponse>),
+        (status = 400, description = "Invalid request", body = ErrorWrapper<StreakResponse>),
+        (status = 401, description = "Unauthorized", body = ErrorWrapper<StreakResponse>),
+        (status = 500, description = "Internal server error", body = ErrorWrapper<StreakResponse>)
     )
 )]
 pub async fn delete_streak(
     State(state): State<Arc<AppState>>,
     Path(user_principal): Path<Principal>,
-) -> Result<Json<ApiResult<CreateStreakRes>>> {
-    todo!()
+    headers: HeaderMap,
+) -> Result<Json<ApiResult<DeleteStreakRes>>> {
+    let token = headers
+        .get("Authorization")
+        .ok_or(Error::AuthTokenMissing)?
+        .to_str()
+        .map_err(|_| Error::AuthTokenInvalid)?;
+    let token = token.trim_start_matches("Bearer ");
+
+    // Verify JWT token
+    crate::auth::verify_token(token, &state.jwt_details)?;
+
+    let response = delete_streak_impl(&state.dragonfly_redis, user_principal).await.map_err(|e| {
+        e
+    })?;
+
+    Ok(Json(Ok(response)))
 }
 
 #[utoipa::path(
@@ -119,4 +147,37 @@ pub async fn delete_streak(
 )]
 pub async fn healthz() -> axum::response::Response {
     Json(serde_json::json!({"status": "ok"})).into_response()
+}
+
+
+async fn get_streak_impl<S: KvStore>(store: &S, user_principal: Principal) -> Result<StreakResponse> {
+    let key = format!("streak:{}", user_principal.to_text());
+    let fields = ["current_streak".to_string(), "last_checkin_date".to_string()];
+    let data = store.hmget(&key, &fields).await?;
+    
+    Ok(StreakResponse {
+        current_streak: data[0].clone(),
+        last_checkin_date: data[1].clone(),
+    })
+}
+
+async fn checkin_impl<S: KvStore>(store: &S, user_principal: Principal) -> Result<StreakResponse> {
+    todo!()
+}
+
+async fn delete_streak_impl<S: KvStore>(store: &S, user_principal: Principal) -> Result<DeleteStreakRes> {
+    todo!()
+}
+
+
+pub fn compute_streak(last_checkin_date: Option<String>, current: i64) -> Result<i64> {
+    let today = Utc::now().date_naive();
+    let last_checkin_date = last_checkin_date.map(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").unwrap());
+
+    match last_checkin_date {
+        None => Ok(1),
+        Some(d) if d == today => Ok(current),
+        Some(d) if (today - d).num_days() == 1 => Ok(current + 1),
+        _ => Ok(1),
+    }
 }
