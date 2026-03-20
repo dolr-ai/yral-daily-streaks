@@ -2,13 +2,14 @@
 mod streak_logic_tests {
     use crate::api::handlers::compute_streak;
     use chrono::{Duration, Utc};
+    use chrono_tz::Asia::Kolkata;
 
     fn today() -> String {
-        Utc::now().date_naive().to_string()
+        Utc::now().with_timezone(&Kolkata).date_naive().to_string()
     }
 
     fn days_ago(n: i64) -> String {
-        (Utc::now().date_naive() - Duration::days(n)).to_string()
+        (Utc::now().with_timezone(&Kolkata).date_naive() - Duration::days(n)).to_string()
     }
 
     // ── No prior checkin ──────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ mod streak_logic_tests {
 mod streak_impl_tests {
     use candid::Principal;
     use chrono::{Duration, Utc};
+    use chrono_tz::Asia::Kolkata;
 
     use crate::api::handlers::{checkin_impl, delete_streak_impl, get_streak_impl};
     use crate::api::store::MockKvStore;
@@ -139,11 +141,11 @@ mod streak_impl_tests {
     }
 
     fn today() -> String {
-        Utc::now().date_naive().to_string()
+        Utc::now().with_timezone(&Kolkata).date_naive().to_string()
     }
 
     fn days_ago(n: i64) -> String {
-        (Utc::now().date_naive() - Duration::days(n)).to_string()
+        (Utc::now().with_timezone(&Kolkata).date_naive() - Duration::days(n)).to_string()
     }
 
     // ── get_streak_impl ───────────────────────────────────────────────────────

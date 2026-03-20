@@ -15,6 +15,7 @@ use axum::{
 };
 use candid::Principal;
 use chrono::{NaiveDate, Utc};
+use chrono_tz::Asia::Kolkata;
 use std::sync::Arc;
 
 #[utoipa::path(
@@ -209,7 +210,7 @@ pub async fn delete_streak_impl<S: KvStore>(
 }
 
 pub fn compute_streak(last_checkin_date: Option<&str>, current: u64) -> (String, String) {
-    let today = Utc::now().date_naive();
+    let today = Utc::now().with_timezone(&Kolkata).date_naive();
     let last_checkin_date: Option<NaiveDate> =
         last_checkin_date.and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
 
