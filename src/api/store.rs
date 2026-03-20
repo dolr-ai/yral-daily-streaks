@@ -1,9 +1,11 @@
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::{dragonfly::DragonflyPool, utils::error::{Error, Result}};
+use crate::{
+    dragonfly::DragonflyPool,
+    utils::error::{Error, Result},
+};
 use redis::AsyncCommands;
 
 const BATCH_SIZE: usize = 200;
@@ -25,6 +27,9 @@ pub trait KvStore: Send + Sync {
 
     /// Get the same field from multiple hash keys (pipeline in real Redis).
     async fn hget_bulk(&self, keys: &[String], field: &str) -> Result<Vec<Option<Vec<u8>>>>;
+
+    /// Delete multiple top-level keys (pipeline in real Redis).
+    async fn del(&self, key: &str) -> Result<()>;
 
     /// Delete multiple top-level keys (pipeline in real Redis).
     async fn del_bulk(&self, keys: &[String]) -> Result<()>;
@@ -127,6 +132,19 @@ impl KvStore for Arc<DragonflyPool> {
             results.extend(chunk_results);
         }
         Ok(results)
+    }
+
+    async fn del(&self, key: &str) -> Result<()> {
+        let key = key.to_string();
+        self.execute_with_retry(|mut conn| {
+            let key = key.clone();
+            async move {
+                let _: usize = conn.del(key).await?;
+                Ok(())
+            }
+        })
+        .await
+        .map_err(Error::from)
     }
 
     async fn del_bulk(&self, keys: &[String]) -> Result<()> {
@@ -283,6 +301,12 @@ impl KvStore for MockKvStore {
             .iter()
             .map(|k| data.get(k).and_then(|h| h.get(field)).cloned())
             .collect())
+    }
+
+    async fn del(&self, key: &str) -> Result<()> {
+        let mut data = self.data.write().await;
+        data.remove(key);
+        Ok(())
     }
 
     async fn del_bulk(&self, keys: &[String]) -> Result<()> {

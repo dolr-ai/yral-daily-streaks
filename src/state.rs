@@ -1,4 +1,4 @@
-use crate::auth::{JwtDetails,init_jwt};
+use crate::auth::{init_jwt, JwtDetails};
 use crate::config::AppConfig;
 use crate::dragonfly::{
     get_ca_cert_pem, get_client_cert_pem, get_client_key_pem, init_dragonfly_redis, DragonflyPool,

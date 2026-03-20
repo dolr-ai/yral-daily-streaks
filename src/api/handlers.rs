@@ -14,9 +14,8 @@ use axum::{
     Json,
 };
 use candid::Principal;
-use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
-
+use std::sync::Arc;
 
 #[utoipa::path(
     get,
@@ -40,7 +39,6 @@ pub async fn get_streak(
     Path(user_principal): Path<Principal>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResult<StreakResponse>>> {
-
     let Some(auth_header) = headers.get("Authorization") else {
         return Err(Error::AuthTokenMissing);
     };
@@ -51,9 +49,9 @@ pub async fn get_streak(
         .trim_start_matches("Bearer ");
 
     let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
-    let response = get_streak_impl(&state.dragonfly_redis, user_principal).await.map_err(|e| {
-        e
-    })?;
+    let response = get_streak_impl(&state.dragonfly_redis, user_principal)
+        .await
+        .map_err(|e| e)?;
 
     Ok(Json(Ok(response)))
 }
@@ -91,9 +89,9 @@ pub async fn checkin(
 
     let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
 
-    let response = checkin_impl(&state.dragonfly_redis, user_principal).await.map_err(|e| {
-        e
-    })?;
+    let response = checkin_impl(&state.dragonfly_redis, user_principal)
+        .await
+        .map_err(|e| e)?;
 
     Ok(Json(Ok(response)))
 }
@@ -130,9 +128,9 @@ pub async fn delete_streak(
     // Verify JWT token
     crate::auth::verify_token(token, &state.jwt_details)?;
 
-    let response = delete_streak_impl(&state.dragonfly_redis, user_principal).await.map_err(|e| {
-        e
-    })?;
+    let response = delete_streak_impl(&state.dragonfly_redis, user_principal)
+        .await
+        .map_err(|e| e)?;
 
     Ok(Json(Ok(response)))
 }
@@ -149,12 +147,17 @@ pub async fn healthz() -> axum::response::Response {
     Json(serde_json::json!({"status": "ok"})).into_response()
 }
 
-
-async fn get_streak_impl<S: KvStore>(store: &S, user_principal: Principal) -> Result<StreakResponse> {
-    let key = format!("streak:{}", user_principal.to_text());
-    let fields = ["current_streak".to_string(), "last_checkin_date".to_string()];
+async fn get_streak_impl<S: KvStore>(
+    store: &S,
+    user_principal: Principal,
+) -> Result<StreakResponse> {
+    let key = format!("daily_streaks:{}", user_principal.to_text());
+    let fields = [
+        "current_streak".to_string(),
+        "last_checkin_date".to_string(),
+    ];
     let data = store.hmget(&key, &fields).await?;
-    
+
     Ok(StreakResponse {
         current_streak: data[0].clone(),
         last_checkin_date: data[1].clone(),
@@ -162,22 +165,54 @@ async fn get_streak_impl<S: KvStore>(store: &S, user_principal: Principal) -> Re
 }
 
 async fn checkin_impl<S: KvStore>(store: &S, user_principal: Principal) -> Result<StreakResponse> {
-    todo!()
+    let key = format!("daily_streaks:{}", user_principal.to_text());
+    let fields = [
+        "current_streak".to_string(),
+        "last_checkin_date".to_string(),
+    ];
+    let data = store.hmget(&key, &fields).await?;
+
+    let current_streak: u64 = data[0]
+        .as_deref()
+        .unwrap_or("0")
+        .parse::<u64>()
+        .map_err(|_| Error::Unknown("Failed to parse current streak number".to_string()))?;
+    let last_checkin_date = data[1].as_deref();
+
+    let streak_response = compute_streak(last_checkin_date, current_streak);
+    Ok(streak_response)
 }
 
-async fn delete_streak_impl<S: KvStore>(store: &S, user_principal: Principal) -> Result<DeleteStreakRes> {
-    todo!()
+async fn delete_streak_impl<S: KvStore>(
+    store: &S,
+    user_principal: Principal,
+) -> Result<DeleteStreakRes> {
+    let key = format!("daily_streaks:{}", user_principal.to_text());
+    let response = store.del(&key).await?;
+    Ok(response)
 }
 
-
-pub fn compute_streak(last_checkin_date: Option<String>, current: i64) -> Result<i64> {
+pub fn compute_streak(last_checkin_date: Option<&str>, current: u64) -> StreakResponse {
     let today = Utc::now().date_naive();
-    let last_checkin_date = last_checkin_date.map(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").unwrap());
+    let last_checkin_date =
+        last_checkin_date.map(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").unwrap());
 
     match last_checkin_date {
-        None => Ok(1),
-        Some(d) if d == today => Ok(current),
-        Some(d) if (today - d).num_days() == 1 => Ok(current + 1),
-        _ => Ok(1),
+        None => StreakResponse {
+            current_streak: Some(1.to_string()),
+            last_checkin_date: Some(today.to_string()),
+        },
+        Some(d) if d == today => StreakResponse {
+            current_streak: Some(current.to_string()),
+            last_checkin_date: Some(today.to_string()),
+        },
+        Some(d) if (today - d).num_days() == 1 => StreakResponse {
+            current_streak: Some((current + 1).to_string()),
+            last_checkin_date: Some(today.to_string()),
+        },
+        _ => StreakResponse {
+            current_streak: Some(1.to_string()),
+            last_checkin_date: Some(today.to_string()),
+        },
     }
 }
