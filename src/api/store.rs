@@ -22,13 +22,15 @@ pub trait KvStore: Send + Sync {
     /// Set a field only if it does not already exist. Returns `true` if inserted.
     async fn hset_nx(&self, key: &str, field: &str, value: &[u8]) -> Result<bool>;
 
+    async fn hmset(&self, key: &str, fields_with_values: &[(&str, &[u8])]) -> Result<()>;
+
     /// Delete a single field from a hash.
     async fn hdel(&self, key: &str, field: &str) -> Result<()>;
 
     /// Get the same field from multiple hash keys (pipeline in real Redis).
     async fn hget_bulk(&self, keys: &[String], field: &str) -> Result<Vec<Option<Vec<u8>>>>;
 
-    /// Delete multiple top-level keys (pipeline in real Redis).
+    /// Delete top-level key (pipeline in real Redis).
     async fn del(&self, key: &str) -> Result<()>;
 
     /// Delete multiple top-level keys (pipeline in real Redis).
@@ -84,6 +86,28 @@ impl KvStore for Arc<DragonflyPool> {
             async move {
                 let inserted: usize = conn.hset_nx(key, field, value).await?;
                 Ok(inserted == 1)
+            }
+        })
+        .await
+        .map_err(Error::from)
+    }
+
+    async fn hmset(&self, key: &str, fields_with_values: &[(&str, &[u8])]) -> Result<()> {
+        let key = key.to_string();
+        let owned: Vec<(String, Vec<u8>)> = fields_with_values
+            .iter()
+            .map(|(f, v)| (f.to_string(), v.to_vec()))
+            .collect();
+        self.execute_with_retry(|mut conn| {
+            let key = key.clone();
+            let owned = owned.clone();
+            async move {
+                let pairs: Vec<(&str, &[u8])> = owned
+                    .iter()
+                    .map(|(f, v)| (f.as_str(), v.as_slice()))
+                    .collect();
+                let _: () = conn.hset_multiple(key, &pairs).await?;
+                Ok(())
             }
         })
         .await
@@ -286,6 +310,15 @@ impl KvStore for MockKvStore {
             hash.insert(field.to_string(), value.to_vec());
             Ok(true)
         }
+    }
+
+    async fn hmset(&self, key: &str, fields_with_values: &[(&str, &[u8])]) -> Result<()> {
+        let mut data = self.data.write().await;
+        let hash = data.entry(key.to_string()).or_default();
+        for (field, value) in fields_with_values {
+            hash.insert(field.to_string(), value.to_vec());
+        }
+        Ok(())
     }
 
     async fn hdel(&self, key: &str, field: &str) -> Result<()> {
