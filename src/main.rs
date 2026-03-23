@@ -6,11 +6,11 @@ use axum::{
 };
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
-use yral_or_not::api::handlers::*;
-use yral_or_not::config::AppConfig;
-use yral_or_not::state::AppState;
-use yral_or_not::utils::error::*;
-use yral_or_not::{get_swagger, get_swagger_root};
+use yral_multi_services::api::handlers::*;
+use yral_multi_services::config::AppConfig;
+use yral_multi_services::state::AppState;
+use yral_multi_services::utils::error::*;
+use yral_multi_services::{get_swagger, get_swagger_root};
 
 async fn main_impl() -> Result<()> {
     let conf = AppConfig::load()?;

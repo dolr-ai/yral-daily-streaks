@@ -3836,7 +3836,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "yral-or-not"
+name = "yral-multi-services"
 version = "0.1.0"
 dependencies = [
  "axum",

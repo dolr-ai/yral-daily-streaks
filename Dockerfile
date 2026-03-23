@@ -9,4 +9,4 @@ ENV RUST_LOG="debug"
 ENV BIND_ADDRESS="0.0.0.0:8080"
 EXPOSE 8080
 
-CMD ["./yral-or-not"]
+CMD ["./yral-multi-services"]
