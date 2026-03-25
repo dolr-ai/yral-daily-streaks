@@ -1,5 +1,5 @@
 [package]
-name = "yral-multi-services"
+name = "yral-daily-streaks"
 version = "0.1.0"
 edition = "2021"
 
@@ -47,3 +47,17 @@ hyper-rustls = { version = "0.27.5", features = [
 ] }
 yral-identity = { git = "https://github.com/dolr-ai/yral-common.git", default-features = false, branch = "master" }
 ic-agent = { version = "0.41.0", default-features = false, features = ["pem"]}
+sentry = { version = "0.37.0", default-features = false, features = [
+    "rustls",
+    "sentry-anyhow",
+    "serde_json",
+    "backtrace",
+    "contexts",
+    "debug-images",
+    "panic",
+    "release-health",
+    "reqwest",
+] }
+sentry-tracing = "0.37.0"
+hostname = "0.4"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

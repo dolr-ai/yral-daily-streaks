@@ -4,9 +4,9 @@
 }
 
 # Main metadata domain
-yral-multi-services.yral.com {
+daily-streaks.yral.com {
     # Reverse proxy to the yral-metadata service
-    reverse_proxy yral-multi-services:8080 {
+    reverse_proxy yral-daily-streaks:8080 {
         # Health checking
         health_uri /healthz
         health_interval 30s
@@ -49,5 +49,5 @@ yral-multi-services.yral.com {
 
 # Optional: Handle bare IP or other hostnames with redirect
 :80 {
-    respond "Service available at https://yral-multi-services.yral.com" 200
+    respond "Service available at https://daily-streaks.yral.com" 200
 }

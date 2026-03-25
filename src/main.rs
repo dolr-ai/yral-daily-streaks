@@ -4,18 +4,33 @@ use axum::{
     routing::{delete, get, patch, post},
     Router,
 };
+use std::env;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
-use yral_multi_services::api::handlers::*;
-use yral_multi_services::config::AppConfig;
-use yral_multi_services::state::AppState;
-use yral_multi_services::utils::error::*;
-use yral_multi_services::{get_swagger, get_swagger_root};
+use yral_daily_streaks::api::handlers::*;
+use yral_daily_streaks::config::AppConfig;
+use yral_daily_streaks::state::AppState;
+use yral_daily_streaks::utils::error::*;
+use yral_daily_streaks::{get_swagger, get_swagger_root};
 
 async fn main_impl() -> Result<()> {
     let conf = AppConfig::load()?;
 
     let state = Arc::new(AppState::new(&conf).await?);
+
+    let _guard = sentry::init((
+        "https://aedce8bbfdb0012f957dbb8b3de37bec@apm.yral.com/20",
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            environment: Some(
+                env::var("APP_ENV")
+                    .unwrap_or_else(|_| "production".to_string())
+                    .into(),
+            ),
+            send_default_pii: true,
+            ..Default::default()
+        },
+    ));
 
     // Build the application router with all routes defined here
     let app = Router::new()

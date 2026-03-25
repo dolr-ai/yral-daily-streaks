@@ -7,6 +7,7 @@ COPY ./config.toml .
 
 ENV RUST_LOG="debug"
 ENV BIND_ADDRESS="0.0.0.0:8080"
+ENV APP_ENV="development"
 EXPOSE 8080
 
-CMD ["./yral-multi-services"]
+CMD ["./yral-daily-streaks"]
