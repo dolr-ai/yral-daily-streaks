@@ -71,7 +71,7 @@ impl Modify for BearerAuth {
 )]
 struct ApiDoc;
 
-async fn openapi_spec() -> impl IntoResponse {
+pub async fn openapi_spec() -> impl IntoResponse {
     Json(ApiDoc::openapi())
 }
 

@@ -11,7 +11,7 @@ use yral_daily_streaks::api::handlers::*;
 use yral_daily_streaks::config::AppConfig;
 use yral_daily_streaks::state::AppState;
 use yral_daily_streaks::utils::error::*;
-use yral_daily_streaks::{get_swagger, get_swagger_root};
+use yral_daily_streaks::{get_swagger, get_swagger_root, openapi_spec};
 
 async fn main_impl() -> Result<()> {
     let conf = AppConfig::load()?;
@@ -41,6 +41,7 @@ async fn main_impl() -> Result<()> {
         // OpenAPI/Swagger UI routes
         .route("/explorer/{*tail}", get(get_swagger))
         .route("/explorer/", get(get_swagger_root))
+        .route("/api-doc/openapi.json", get(openapi_spec))
         .route("/healthz", get(healthz))
         .layer(CorsLayer::permissive())
         // Add sentry middleware layer
