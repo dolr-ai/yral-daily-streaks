@@ -86,16 +86,12 @@ jobs:
         with:
           url: https://vault.yral.com
           method: jwt
-          role: yral-metadata-role
+          role: yral-daily-streaks-role
           jwtGithubAudience: "https://github.com/dolr-ai"
           secrets: |
-            secret/data/yral-metadata/YRAL_AUTH_METADATA_SERVICE_ACCESS_PUBLIC_KEY value | JWT_PUBLIC_KEY ;
-            secret/data/yral-metadata/YRAL_AUTH_JWT_VERIFY_PUBLIC_KEY value | YRAL_AUTH_PUBLIC_KEY ;
-            secret/data/DRAGONFLY_CLUSTER_2_PASSWORD value | DRAGONFLY_PASSWORD ;
-            secret/data/DRAGONFLY_CLUSTER_2_HOSTS value | DRAGONFLY_HOSTS ;
-            secret/data/DRAGONFLY_CLUSTER_2_CA_CERT value | DRAGONFLY_CA_CERT ;
-            secret/data/DRAGONFLY_CLUSTER_2_CLIENT_CERT value | DRAGONFLY_CLIENT_CERT ;
-            secret/data/DRAGONFLY_CLUSTER_2_CLIENT_KEY value | DRAGONFLY_CLIENT_KEY ;
+            secret/data/yral-daily-streaks/YRAL_AUTH_METADATA_SERVICE_ACCESS_PUBLIC_KEY value | JWT_PUBLIC_KEY ;
+            secret/data/yral-daily-streaks/YRAL_AUTH_JWT_VERIFY_PUBLIC_KEY value | YRAL_AUTH_PUBLIC_KEY ;
+            secret/data/yral-daily-streaks/PG_DATABASE_URL value | PG_DATABASE_URL ;
             secret/data/COOLIFY_TOKEN value | COOLIFY_TOKEN ;
             secret/data/COOLIFY_PROJECT_UUID value | COOLIFY_PROJECT_UUID ;
             secret/data/COOLIFY_SERVER_UUID value | COOLIFY_SERVER_UUID ;
@@ -156,11 +152,7 @@ jobs:
           # Secrets from GitHub
           JWT_PUBLIC_KEY: ${{ env.JWT_PUBLIC_KEY }}
           YRAL_AUTH_PUBLIC_KEY: ${{ env.YRAL_AUTH_PUBLIC_KEY }}
-          DRAGONFLY_PASSWORD: ${{ env.DRAGONFLY_PASSWORD }}
-          DRAGONFLY_HOSTS: ${{ env.DRAGONFLY_HOSTS }}
-          DRAGONFLY_CA_CERT: ${{ env.DRAGONFLY_CA_CERT}}
-          DRAGONFLY_CLIENT_CERT: ${{ env.DRAGONFLY_CLIENT_CERT}}
-          DRAGONFLY_CLIENT_KEY: ${{ env.DRAGONFLY_CLIENT_KEY}}
+          PG_DATABASE_URL: ${{ env.PG_DATABASE_URL }}
         run: |
           APP_UUID="${{ steps.coolify_app.outputs.app_uuid }}"
           flatten() { echo "$1" | tr -d '\n\r'; }
@@ -168,20 +160,12 @@ jobs:
           ENV_JSON=$(jq -n \
             --arg jwt_public_key "$JWT_PUBLIC_KEY" \
             --arg yral_auth_public_key "$YRAL_AUTH_PUBLIC_KEY" \
-            --arg dragonfly_password "$DRAGONFLY_PASSWORD" \
-            --arg dragonfly_hosts "$DRAGONFLY_HOSTS" \
-            --arg dragonfly_ca_cert "$DRAGONFLY_CA_CERT" \
-            --arg dragonfly_client_cert "$DRAGONFLY_CLIENT_CERT" \
-            --arg dragonfly_client_key "$DRAGONFLY_CLIENT_KEY" \
+            --arg pg_database_url "$PG_DATABASE_URL" \
             '{
               "data": [
                 {"key": "JWT_PUBLIC_KEY", "value": $jwt_public_key, "is_multiline": true},
                 {"key": "YRAL_AUTH_PUBLIC_KEY", "value": $yral_auth_public_key, "is_multiline": true},
-                {"key": "DRAGONFLY_PASSWORD", "value": $dragonfly_password, "is_literal": true},
-                {"key": "DRAGONFLY_HOSTS", "value": $dragonfly_hosts, "is_literal": true},
-                {"key": "DRAGONFLY_CA_CERT", "value": $dragonfly_ca_cert, "is_multiline": true},
-                {"key": "DRAGONFLY_CLIENT_CERT", "value": $dragonfly_client_cert, "is_multiline": true},
-                {"key": "DRAGONFLY_CLIENT_KEY", "value": $dragonfly_client_key, "is_multiline": true}
+                {"key": "PG_DATABASE_URL", "value": $pg_database_url, "is_multiline": false},
               ]
             }')
 
