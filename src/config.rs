@@ -10,6 +10,7 @@ pub struct AppConfig {
     pub bind_address: SocketAddr,
     pub jwt_public_key: String,
     pub yral_auth_public_key: String,
+    pub pg_database_url: String,
 }
 
 impl AppConfig {

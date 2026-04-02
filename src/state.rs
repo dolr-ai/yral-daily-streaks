@@ -3,7 +3,6 @@ use crate::config::AppConfig;
 use crate::utils::error::{Error, Result};
 use crate::utils::yral_auth_jwt::YralAuthJwt;
 use sqlx::postgres::PgPoolOptions;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -14,12 +13,10 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new(app_config: &AppConfig) -> Result<Self> {
-        let database_url =
-            std::env::var("DATABASE_URL").expect("Database url not found in environment variables");
 
         let db_pool = PgPoolOptions::new()
             .max_connections(10)
-            .connect(&database_url)
+            .connect(&app_config.pg_database_url)
             .await
             .map_err(|e| Error::Unknown(e.to_string()))?;
 
