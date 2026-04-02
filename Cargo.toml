@@ -15,16 +15,6 @@ reqwest = { version = "0.12", default-features = false, features = [
 chrono = "0.4"
 chrono-tz = "0.10"
 log = "0.4.27"
-redis = { version = "1.0.2", features = [
-    "tokio-rustls-comp",
-    "aio",
-    "ahash",
-    "connection-manager",
-    "cluster",
-    "cluster-async",
-    "acl",
-    "sentinel"
-] }
 axum = { version = "0.8.0", features = ["macros", "json"] }
 tower = "0.5.2"
 tower-http = { version = "0.6.2", features = ["cors", "trace"] }
@@ -61,3 +51,7 @@ sentry = { version = "0.37.0", default-features = false, features = [
 sentry-tracing = "0.37.0"
 hostname = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono"] }
+async-trait = "0.1"
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres"] }

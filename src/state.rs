@@ -1,31 +1,30 @@
 use crate::auth::{init_jwt, JwtDetails};
 use crate::config::AppConfig;
-use crate::dragonfly::{
-    get_ca_cert_pem, get_client_cert_pem, get_client_key_pem, init_dragonfly_redis, DragonflyPool,
-};
 use crate::utils::error::{Error, Result};
 use crate::utils::yral_auth_jwt::YralAuthJwt;
+use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub dragonfly_redis: Arc<DragonflyPool>,
+    pub db: sqlx::PgPool,
     pub jwt_details: JwtDetails,
     pub yral_auth_jwt: YralAuthJwt,
 }
 
 impl AppState {
     pub async fn new(app_config: &AppConfig) -> Result<Self> {
-        let ca_cert_bytes = get_ca_cert_pem()?;
-        let client_cert_bytes = get_client_cert_pem()?;
-        let client_key_bytes = get_client_key_pem()?;
+        let database_url =
+            std::env::var("DATABASE_URL").expect("Database url not found in environment variables");
+
+        let db_pool = PgPoolOptions::new()
+            .max_connections(10)
+            .connect(&database_url)
+            .await
+            .map_err(|e| Error::Unknown(e.to_string()))?;
+
         Ok(AppState {
-            dragonfly_redis: init_dragonfly_redis(
-                ca_cert_bytes,
-                client_cert_bytes,
-                client_key_bytes,
-            )
-            .await?,
+            db: db_pool,
             jwt_details: init_jwt(app_config)?,
             yral_auth_jwt: YralAuthJwt::init(app_config.yral_auth_public_key.clone())?,
         })

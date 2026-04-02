@@ -1,373 +1,130 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use sqlx::Row;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 use crate::{
-    dragonfly::DragonflyPool,
+    types::StreakResponse,
     utils::error::{Error, Result},
 };
-use redis::AsyncCommands;
 
-const BATCH_SIZE: usize = 200;
-
-/// Abstraction over the hash-map operations needed by the API implementation.
-/// Implemented by `Arc<DragonflyPool>` (production) and `MockMetadataKvStore` (tests).
-pub trait KvStore: Send + Sync {
-    /// Get a single field from a hash.
-    async fn hget(&self, key: &str, field: &str) -> Result<Option<Vec<u8>>>;
-
-    /// Set a field in a hash.
-    async fn hset(&self, key: &str, field: &str, value: &[u8]) -> Result<()>;
-
-    /// Set a field only if it does not already exist. Returns `true` if inserted.
-    async fn hset_nx(&self, key: &str, field: &str, value: &[u8]) -> Result<bool>;
-
-    async fn hmset(&self, key: &str, fields_with_values: &[(&str, &[u8])]) -> Result<()>;
-
-    /// Delete a single field from a hash.
-    async fn hdel(&self, key: &str, field: &str) -> Result<()>;
-
-    /// Get the same field from multiple hash keys (pipeline in real Redis).
-    async fn hget_bulk(&self, keys: &[String], field: &str) -> Result<Vec<Option<Vec<u8>>>>;
-
-    /// Delete top-level key (pipeline in real Redis).
-    async fn del(&self, key: &str) -> Result<()>;
-
-    /// Delete multiple top-level keys (pipeline in real Redis).
-    async fn del_bulk(&self, keys: &[String]) -> Result<()>;
-
-    /// Delete multiple fields from a single hash.
-    async fn hdel_bulk(&self, key: &str, fields: &[String]) -> Result<()>;
-
-    /// Get multiple fields from a single hash; values are decoded as UTF-8 strings.
-    async fn hmget(&self, key: &str, fields: &[String]) -> Result<Vec<Option<String>>>;
+#[async_trait::async_trait]
+pub trait StreakStore: Send + Sync {
+    async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakResponse>>;
+    async fn set_streak(&self, user_principal: &str, streak: &str, date: &str) -> Result<()>;
+    async fn delete_streak(&self, user_principal: &str) -> Result<()>;
 }
 
-// ── Arc<DragonflyPool> implementation ────────────────────────────────────────
-
-impl KvStore for Arc<DragonflyPool> {
-    async fn hget(&self, key: &str, field: &str) -> Result<Option<Vec<u8>>> {
-        let key = key.to_string();
-        let field = field.to_string();
-        self.execute_with_retry(|mut conn| {
-            let key = key.clone();
-            let field = field.clone();
-            async move { conn.hget(key, field).await }
-        })
+#[async_trait::async_trait]
+impl StreakStore for sqlx::PgPool {
+    async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakResponse>> {
+        let row = sqlx::query(
+            "SELECT current_streak, last_checkin_date FROM daily_streaks WHERE user_principal = $1",
+        )
+        .bind(user_principal)
+        .fetch_optional(self as &sqlx::PgPool)
         .await
-        .map_err(Error::from)
-    }
+        .map_err(|e| Error::SqlxError(e))?;
 
-    async fn hset(&self, key: &str, field: &str, value: &[u8]) -> Result<()> {
-        let key = key.to_string();
-        let field = field.to_string();
-        let value = value.to_vec();
-        self.execute_with_retry(|mut conn| {
-            let key = key.clone();
-            let field = field.clone();
-            let value = value.clone();
-            async move {
-                let _: bool = conn.hset(key, field, value).await?;
-                Ok(())
+        Ok(row.map(|r| {
+            let streak: i64 = r.get("current_streak");
+            let date: chrono::NaiveDate = r.get("last_checkin_date");
+
+            StreakResponse {
+                current_streak: Some(streak.to_string()),
+                last_checkin_date: Some(date.to_string()),
             }
-        })
+        }))
+
+        // Ok(row.map(|r| StreakResponse {
+        //     current_streak: Some(r.current_streak.to_string()),
+        //     last_checkin_date: Some(r.last_checkin_date.to_string()),
+        // }))
+    }
+
+    async fn set_streak(&self, user_principal: &str, streak: &str, date: &str) -> Result<()> {
+        let current_streak: i64 = streak.parse().unwrap_or(1);
+        let last_checkin = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .map_err(|_| Error::Unknown("Invalid date".to_string()))?;
+
+        let _respose = sqlx::query(
+            "INSERT INTO daily_streaks (user_principal, current_streak, last_checkin_date) VALUES ($1, $2, $3)
+             ON CONFLICT (user_principal) DO UPDATE SET current_streak = EXCLUDED.current_streak, last_checkin_date = EXCLUDED.last_checkin_date",
+        )
+        .bind(user_principal)
+        .bind(current_streak)
+        .bind(last_checkin)
+        .execute(self)
         .await
-        .map_err(Error::from)
-    }
+        .map_err(|e| Error::SqlxError(e))?;
 
-    async fn hset_nx(&self, key: &str, field: &str, value: &[u8]) -> Result<bool> {
-        let key = key.to_string();
-        let field = field.to_string();
-        let value = value.to_vec();
-        self.execute_with_retry(|mut conn| {
-            let key = key.clone();
-            let field = field.clone();
-            let value = value.clone();
-            async move {
-                let inserted: usize = conn.hset_nx(key, field, value).await?;
-                Ok(inserted == 1)
-            }
-        })
-        .await
-        .map_err(Error::from)
-    }
-
-    async fn hmset(&self, key: &str, fields_with_values: &[(&str, &[u8])]) -> Result<()> {
-        let key = key.to_string();
-        let owned: Vec<(String, Vec<u8>)> = fields_with_values
-            .iter()
-            .map(|(f, v)| (f.to_string(), v.to_vec()))
-            .collect();
-        self.execute_with_retry(|mut conn| {
-            let key = key.clone();
-            let owned = owned.clone();
-            async move {
-                let pairs: Vec<(&str, &[u8])> = owned
-                    .iter()
-                    .map(|(f, v)| (f.as_str(), v.as_slice()))
-                    .collect();
-                let _: () = conn.hset_multiple(key, &pairs).await?;
-                Ok(())
-            }
-        })
-        .await
-        .map_err(Error::from)
-    }
-
-    async fn hdel(&self, key: &str, field: &str) -> Result<()> {
-        let key = key.to_string();
-        let field = field.to_string();
-        self.execute_with_retry(|mut conn| {
-            let key = key.clone();
-            let field = field.clone();
-            async move {
-                let _: usize = conn.hdel(key, field).await?;
-                Ok(())
-            }
-        })
-        .await
-        .map_err(Error::from)
-    }
-
-    async fn hget_bulk(&self, keys: &[String], field: &str) -> Result<Vec<Option<Vec<u8>>>> {
-        if keys.is_empty() {
-            return Ok(vec![]);
-        }
-        let keys = keys.to_vec();
-        let field = field.to_string();
-        let mut results = Vec::with_capacity(keys.len());
-        for chunk in keys.chunks(BATCH_SIZE) {
-            let chunk = chunk.to_vec();
-            let field = field.clone();
-            let chunk_results: Vec<Option<Vec<u8>>> = self
-                .execute_with_retry(|mut conn| {
-                    let chunk = chunk.clone();
-                    let field = field.clone();
-                    async move {
-                        let mut pipe = redis::pipe();
-                        for key in &chunk {
-                            pipe.hget(key, &field);
-                        }
-                        pipe.query_async(&mut conn).await
-                    }
-                })
-                .await
-                .map_err(Error::from)?;
-            results.extend(chunk_results);
-        }
-        Ok(results)
-    }
-
-    async fn del(&self, key: &str) -> Result<()> {
-        let key = key.to_string();
-        self.execute_with_retry(|mut conn| {
-            let key = key.clone();
-            async move {
-                let _: usize = conn.del(key).await?;
-                Ok(())
-            }
-        })
-        .await
-        .map_err(Error::from)
-    }
-
-    async fn del_bulk(&self, keys: &[String]) -> Result<()> {
-        if keys.is_empty() {
-            return Ok(());
-        }
-        let keys = keys.to_vec();
-        for chunk in keys.chunks(BATCH_SIZE) {
-            let chunk = chunk.to_vec();
-            self.execute_with_retry(|mut conn| {
-                let chunk = chunk.clone();
-                async move {
-                    let mut pipe = redis::pipe();
-                    pipe.del(&chunk).ignore();
-                    pipe.query_async::<()>(&mut conn).await
-                }
-            })
-            .await
-            .map_err(Error::from)?;
-        }
         Ok(())
     }
 
-    async fn hdel_bulk(&self, key: &str, fields: &[String]) -> Result<()> {
-        if fields.is_empty() {
-            return Ok(());
-        }
-        let key = key.to_string();
-        let fields = fields.to_vec();
-        for chunk in fields.chunks(BATCH_SIZE) {
-            let chunk = chunk.to_vec();
-            let key = key.clone();
-            self.execute_with_retry(|mut conn| {
-                let key = key.clone();
-                let chunk = chunk.clone();
-                async move {
-                    let _: usize = conn.hdel(key, chunk).await?;
-                    Ok(())
-                }
-            })
+    async fn delete_streak(&self, user_principal: &str) -> Result<()> {
+        let _response = sqlx::query("DELETE FROM daily_streaks WHERE user_principal = $1")
+            .bind(user_principal)
+            .execute(self)
             .await
-            .map_err(Error::from)?;
-        }
+            .map_err(|e| Error::SqlxError(e))?;
         Ok(())
-    }
-
-    async fn hmget(&self, key: &str, fields: &[String]) -> Result<Vec<Option<String>>> {
-        if fields.is_empty() {
-            return Ok(vec![]);
-        }
-        let key = key.to_string();
-        let fields = fields.to_vec();
-        let mut results = Vec::with_capacity(fields.len());
-        for chunk in fields.chunks(BATCH_SIZE) {
-            let chunk = chunk.to_vec();
-            let key = key.clone();
-            let chunk_results: Vec<Option<String>> = self
-                .execute_with_retry(|mut conn| {
-                    let key = key.clone();
-                    let chunk = chunk.clone();
-                    async move { conn.hmget(key, chunk).await }
-                })
-                .await
-                .map_err(Error::from)?;
-            results.extend(chunk_results);
-        }
-        Ok(results)
     }
 }
 
-// ── MockMetadataKvStore ───────────────────────────────────────────────────────
+// pub struct MockStreakStore {
+//     pub test_db: TestDb,
+// }
 
-/// In-memory store for use in unit tests. No real Redis connection required.
-pub struct MockKvStore {
-    /// `outer key → (field → bytes)`
-    pub data: Arc<RwLock<HashMap<String, HashMap<String, Vec<u8>>>>>,
-}
+// impl MockStreakStore {
+//     pub async fn new() -> Self {
+//         MockStreakStore {
+//             test_db: TestDb::new().await,
+//         }
+//     }
 
-impl MockKvStore {
-    pub fn new() -> Self {
-        Self {
-            data: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
+//     pub async fn key_exists(&self, user_principal: &str) -> bool {
+//         let data = self.data.read().await;
+//         data.contains_key(user_principal)
+//     }
+// }
 
-    /// Pre-populate a hash field (for test setup).
-    pub async fn insert(&self, key: &str, field: &str, value: Vec<u8>) {
-        self.data
-            .write()
-            .await
-            .entry(key.to_string())
-            .or_default()
-            .insert(field.to_string(), value);
-    }
+// #[async_trait::async_trait]
+// impl StreakStore for MockStreakStore {
 
-    /// Read back a stored field (for test assertions).
-    pub async fn get_raw(&self, key: &str, field: &str) -> Option<Vec<u8>> {
-        self.data
-            .read()
-            .await
-            .get(key)
-            .and_then(|h| h.get(field))
-            .cloned()
-    }
+//     async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakResponse>> {
+//         let row = sqlx::query(
+//             "SELECT current_streak, last_checkin_date FROM user_streaks WHERE user_principal = $1",
+//         )
+//         .bind(user_principal)
+//         .fetch_optional(&self.test_db.pool as &sqlx::PgPool)
+//         .await
+//         .map_err(|e| Error::SqlxError(e))?;
 
-    /// True if the outer key exists (even if its hash is empty).
-    pub async fn key_exists(&self, key: &str) -> bool {
-        self.data.read().await.contains_key(key)
-    }
-}
+//         Ok(row.map(|r| {
+//             let streak: i64 = r.get("current_streak");
+//             let date: String = r.get("last_checkin_date");
 
-impl KvStore for MockKvStore {
-    async fn hget(&self, key: &str, field: &str) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .data
-            .read()
-            .await
-            .get(key)
-            .and_then(|h| h.get(field))
-            .cloned())
-    }
+//             StreakResponse {
+//                 current_streak: Some(streak.to_string()),
+//                 last_checkin_date: Some(date.to_string()),
+//             }
+//         }))
 
-    async fn hset(&self, key: &str, field: &str, value: &[u8]) -> Result<()> {
-        self.data
-            .write()
-            .await
-            .entry(key.to_string())
-            .or_default()
-            .insert(field.to_string(), value.to_vec());
-        Ok(())
-    }
+//         // Ok(row.map(|r| StreakResponse {
+//         //     current_streak: Some(r.current_streak.to_string()),
+//         //     last_checkin_date: Some(r.last_checkin_date.to_string()),
+//         // }))
+//     }
 
-    async fn hset_nx(&self, key: &str, field: &str, value: &[u8]) -> Result<bool> {
-        let mut data = self.data.write().await;
-        let hash = data.entry(key.to_string()).or_default();
-        if hash.contains_key(field) {
-            Ok(false)
-        } else {
-            hash.insert(field.to_string(), value.to_vec());
-            Ok(true)
-        }
-    }
+//     async fn set_streak(&self, user_principal: &str, streak: &str, date: &str) -> Result<()> {
+//         self.data.write().await.insert(
+//             user_principal.to_string(),
+//             (streak.to_string(), date.to_string()),
+//         );
+//         Ok(())
+//     }
 
-    async fn hmset(&self, key: &str, fields_with_values: &[(&str, &[u8])]) -> Result<()> {
-        let mut data = self.data.write().await;
-        let hash = data.entry(key.to_string()).or_default();
-        for (field, value) in fields_with_values {
-            hash.insert(field.to_string(), value.to_vec());
-        }
-        Ok(())
-    }
-
-    async fn hdel(&self, key: &str, field: &str) -> Result<()> {
-        if let Some(hash) = self.data.write().await.get_mut(key) {
-            hash.remove(field);
-        }
-        Ok(())
-    }
-
-    async fn hget_bulk(&self, keys: &[String], field: &str) -> Result<Vec<Option<Vec<u8>>>> {
-        let data = self.data.read().await;
-        Ok(keys
-            .iter()
-            .map(|k| data.get(k).and_then(|h| h.get(field)).cloned())
-            .collect())
-    }
-
-    async fn del(&self, key: &str) -> Result<()> {
-        let mut data = self.data.write().await;
-        data.remove(key);
-        Ok(())
-    }
-
-    async fn del_bulk(&self, keys: &[String]) -> Result<()> {
-        let mut data = self.data.write().await;
-        for key in keys {
-            data.remove(key);
-        }
-        Ok(())
-    }
-
-    async fn hdel_bulk(&self, key: &str, fields: &[String]) -> Result<()> {
-        if let Some(hash) = self.data.write().await.get_mut(key) {
-            for field in fields {
-                hash.remove(field);
-            }
-        }
-        Ok(())
-    }
-
-    async fn hmget(&self, key: &str, fields: &[String]) -> Result<Vec<Option<String>>> {
-        let data = self.data.read().await;
-        let hash = data.get(key);
-        Ok(fields
-            .iter()
-            .map(|f| {
-                hash.and_then(|h| h.get(f))
-                    .and_then(|v| String::from_utf8(v.clone()).ok())
-            })
-            .collect())
-    }
-}
+//     async fn delete_streak(&self, user_principal: &str) -> Result<()> {
+//         self.data.write().await.remove(user_principal);
+//         Ok(())
+//     }
+// }

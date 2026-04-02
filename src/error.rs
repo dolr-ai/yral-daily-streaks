@@ -37,6 +37,10 @@ pub enum ApiError {
     UpdateSession(String),
     #[error("invalid username, must be 3-15 alphanumeric characters")]
     InvalidUsername,
+    #[error("sqlx error")]
+    SqlxError,
+    #[error("data parsing error: {0}")]
+    DataParseError(String),
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;

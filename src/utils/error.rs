@@ -4,11 +4,12 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use candid::error;
 use ic_agent::export::PrincipalError;
 use jsonwebtoken::errors as jwt_errors;
-use redis::RedisError;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use sqlx::Error as SqlxError;
 use std::{env::VarError, ops::Deref};
 use thiserror::Error;
 use utoipa::ToSchema;
@@ -21,9 +22,6 @@ pub enum Error {
     #[error("failed to load config {0}")]
     #[schema(value_type = ConfigErrorDetail)]
     Config(#[from] config::ConfigError),
-    #[error("{0}")]
-    #[schema(value_type = RedisErrorDetail)]
-    Redis(#[from] RedisError),
     #[error("failed to deserialize json {0}")]
     #[schema(value_type = SerdeJsonErrorDetail)]
     Deser(#[from] serde_json::Error),
@@ -50,6 +48,12 @@ pub enum Error {
     InvalidUsername,
     #[error("Invalid email")]
     InvalidEmail(String),
+    #[error("sqlx error {0}")]
+    #[schema(value_type = SQLxErrorDetail)]
+    SqlxError(#[from] SqlxError),
+    #[error("data parsing error {0}")]
+    #[schema(value_type = String)]
+    DataParseError(String),
 }
 
 impl From<&Error> for ApiResult<()> {
@@ -58,10 +62,6 @@ impl From<&Error> for ApiResult<()> {
             Error::IO(_) | Error::Config(_) => {
                 log::warn!("internal error {value}");
                 ApiError::Unknown("internal error, reported".into())
-            }
-            Error::Redis(e) => {
-                log::warn!("redis error {e}");
-                ApiError::Redis
             }
             Error::Deser(e) => {
                 log::warn!("deserialization error {e}");
@@ -80,6 +80,14 @@ impl From<&Error> for ApiResult<()> {
             }
             Error::InvalidUsername => ApiError::InvalidUsername,
             Error::InvalidEmail(email) => ApiError::InvalidEmail(email.clone()),
+            Error::SqlxError(e) => {
+                log::warn!("sqlx error {e}");
+                ApiError::SqlxError
+            }
+            Error::DataParseError(e) => {
+                log::warn!("data parsing error {e}");
+                ApiError::DataParseError(e.clone())
+            }
         };
         ApiResult::Err(err)
     }
@@ -101,7 +109,6 @@ impl Error {
         match self {
             Error::IO(_)
             | Error::Config(_)
-            | Error::Redis(_)
             | Error::Deser(_)
             | Error::Unknown(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::Jwt(_) | Error::AuthTokenInvalid | Error::AuthTokenMissing => {
@@ -109,10 +116,12 @@ impl Error {
             }
             Error::EnvironmentVariable(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::EnvironmentVariableMissing(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Error::InvalidPrincipal(_) | Error::InvalidEmail(_) | Error::InvalidUsername => {
-                StatusCode::BAD_REQUEST
-            }
+            Error::InvalidPrincipal(_)
+            | Error::InvalidEmail(_)
+            | Error::InvalidUsername
+            | Error::DataParseError(_) => StatusCode::BAD_REQUEST,
             Error::SwaggerUi(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::SqlxError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -204,71 +213,6 @@ impl From<yral_identity::Error> for IdentityErrorDetail {
 impl std::fmt::Display for IdentityErrorDetail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
-    }
-}
-
-#[derive(Debug, ToSchema, Serialize)]
-pub struct RedisErrorDetail {
-    #[schema(example = "ResponseError")]
-    pub kind: RedisErrorKind,
-    #[schema(example = "Connection refused")]
-    pub detail: String,
-}
-
-#[derive(Debug, ToSchema, Serialize)]
-pub enum RedisErrorKind {
-    ResponseError,
-    ParseError,
-    AuthenticationFailed,
-    TypeError,
-    ExecAbortError,
-    BusyLoadingError,
-    NoScriptError,
-    InvalidClientConfig,
-    Moved,
-    Ask,
-    TryAgain,
-    ClusterDown,
-    CrossSlot,
-    MasterDown,
-    IoError,
-    ClientError,
-    ExtensionError,
-    ReadOnly,
-    MasterNameNotFoundBySentinel,
-    NoValidReplicasFoundBySentinel,
-    EmptySentinelList,
-    NotBusy,
-    ClusterConnectionNotFound,
-    Unknown,
-}
-
-impl From<redis::ErrorKind> for RedisErrorKind {
-    fn from(e: redis::ErrorKind) -> Self {
-        match e {
-            redis::ErrorKind::AuthenticationFailed => RedisErrorKind::AuthenticationFailed,
-            redis::ErrorKind::InvalidClientConfig => RedisErrorKind::InvalidClientConfig,
-            redis::ErrorKind::MasterNameNotFoundBySentinel => {
-                RedisErrorKind::MasterNameNotFoundBySentinel
-            }
-            redis::ErrorKind::NoValidReplicasFoundBySentinel => {
-                RedisErrorKind::NoValidReplicasFoundBySentinel
-            }
-            redis::ErrorKind::EmptySentinelList => RedisErrorKind::EmptySentinelList,
-            redis::ErrorKind::ClusterConnectionNotFound => {
-                RedisErrorKind::ClusterConnectionNotFound
-            }
-            _ => RedisErrorKind::Unknown,
-        }
-    }
-}
-
-impl From<RedisError> for RedisErrorDetail {
-    fn from(e: RedisError) -> Self {
-        Self {
-            kind: RedisErrorKind::from(e.kind()),
-            detail: e.to_string(),
-        }
     }
 }
 
@@ -420,6 +364,23 @@ impl From<PrincipalError> for PrincipalErrorDetail {
                     principal.to_text()
                 ),
             },
+        }
+    }
+}
+
+#[derive(Debug, ToSchema, Serialize)]
+pub struct SQLxErrorDetail {
+    #[schema(example = "BytesTooLong")]
+    pub kind: String,
+    #[schema(example = "Bytes is longer than 29 bytes.")]
+    pub message: String,
+}
+
+impl From<SqlxError> for SQLxErrorDetail {
+    fn from(e: SqlxError) -> Self {
+        SQLxErrorDetail {
+            kind: format!("{:?}", e),
+            message: e.to_string(),
         }
     }
 }

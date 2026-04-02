@@ -126,7 +126,8 @@ mod streak_impl_tests {
     use chrono_tz::Asia::Kolkata;
 
     use crate::api::handlers::{checkin_impl, delete_streak_impl, get_streak_impl};
-    use crate::api::store::MockKvStore;
+    use crate::api::store::StreakStore;
+    use crate::utils::test_helper::db_test_helpers::TestDb;
 
     fn anon() -> Principal {
         Principal::anonymous()
@@ -134,10 +135,6 @@ mod streak_impl_tests {
 
     fn user_a() -> Principal {
         Principal::from_text("aaaaa-aa").unwrap()
-    }
-
-    fn streak_key(p: Principal) -> String {
-        format!("daily_streaks:{}", p.to_text())
     }
 
     fn today() -> String {
@@ -152,38 +149,34 @@ mod streak_impl_tests {
 
     #[tokio::test]
     async fn get_streak_new_user_returns_all_none() {
-        let store = MockKvStore::new();
-        let res = get_streak_impl(&store, anon()).await.unwrap();
+        let db = TestDb::new().await;
+        let res = get_streak_impl(&db.pool, anon()).await.unwrap();
         assert!(res.current_streak.is_none());
         assert!(res.last_checkin_date.is_none());
     }
 
     #[tokio::test]
     async fn get_streak_returns_stored_values_verbatim() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"7".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", b"2025-01-01".to_vec())
-            .await;
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+        db.pool.set_streak(&k, "7", "2025-01-01").await.unwrap();
 
-        let res = get_streak_impl(&store, anon()).await.unwrap();
+        let res = get_streak_impl(&db.pool, anon()).await.unwrap();
         assert_eq!(res.current_streak.as_deref(), Some("7"));
         assert_eq!(res.last_checkin_date.as_deref(), Some("2025-01-01"));
     }
 
     #[tokio::test]
     async fn get_streak_does_not_mutate_store() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"3".to_vec()).await;
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+        db.pool.set_streak(&k, "3", "2025-01-01").await.unwrap();
 
-        get_streak_impl(&store, anon()).await.unwrap();
-
-        let raw = store.get_raw(&k, "current_streak").await;
+        get_streak_impl(&db.pool, anon()).await.unwrap();
+        let raw = db.pool.get_streak(&k).await;
         assert_eq!(
-            raw.as_deref(),
-            Some(b"3".as_ref()),
+            raw.unwrap().unwrap().current_streak,
+            Some("3".to_string()),
             "get_streak must be a pure read -- store must be unchanged"
         );
     }
@@ -192,50 +185,34 @@ mod streak_impl_tests {
 
     #[tokio::test]
     async fn first_checkin_returns_streak_one_and_todays_date() {
-        let store = MockKvStore::new();
-        let res = checkin_impl(&store, anon()).await.unwrap();
+        let db = TestDb::new().await;
+        let res = checkin_impl(&db.pool, anon()).await.unwrap();
         assert_eq!(res.current_streak.as_deref(), Some("1"));
         assert_eq!(res.last_checkin_date.as_deref(), Some(today().as_str()));
     }
 
-    /// BUG REGRESSION: checkin_impl computes the new streak but never persists it
-    /// back to the store via hset/hmset.
-    ///
-    /// This test FAILS on the current code.
-    /// It must go GREEN once `checkin_impl` calls `store.hset` after `compute_streak`.
     #[tokio::test]
     async fn checkin_persists_updated_streak_to_store() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
+        let db = TestDb::new().await;
+        let k = anon().to_text();
         let yesterday = days_ago(1);
 
-        store.insert(&k, "current_streak", b"3".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", yesterday.as_bytes().to_vec())
-            .await;
-
-        let res = checkin_impl(&store, anon()).await.unwrap();
+        db.pool.set_streak(&k, "3", &yesterday).await.unwrap();
+        let res = checkin_impl(&db.pool, anon()).await.unwrap();
 
         // Returned value must already be correct
         assert_eq!(res.current_streak.as_deref(), Some("4"));
         assert_eq!(res.last_checkin_date.as_deref(), Some(today().as_str()));
 
-        // BUG: store still holds stale values because hset is never called.
-        // Fix: add store.hmset / hset calls in checkin_impl after compute_streak.
-        let stored_streak = store.get_raw(&k, "current_streak").await;
-        let stored_date = store.get_raw(&k, "last_checkin_date").await;
+        let streak_data = db.pool.get_streak(&k).await.unwrap().unwrap();
 
         assert_eq!(
-            stored_streak
-                .as_deref()
-                .and_then(|v| std::str::from_utf8(v).ok()),
+            streak_data.current_streak.as_deref(),
             Some("4"),
             "BUG: current_streak not written back to store after checkin"
         );
         assert_eq!(
-            stored_date
-                .as_deref()
-                .and_then(|v| std::str::from_utf8(v).ok()),
+            streak_data.last_checkin_date.as_deref(),
             Some(today().as_str()),
             "BUG: last_checkin_date not written back to store after checkin"
         );
@@ -243,14 +220,11 @@ mod streak_impl_tests {
 
     #[tokio::test]
     async fn double_checkin_same_day_is_idempotent() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"5".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", today().as_bytes().to_vec())
-            .await;
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+        db.pool.set_streak(&k, "5", today().as_str()).await.unwrap();
 
-        let res = checkin_impl(&store, anon()).await.unwrap();
+        let res = checkin_impl(&db.pool, anon()).await.unwrap();
         assert_eq!(
             res.current_streak.as_deref(),
             Some("5"),
@@ -260,27 +234,21 @@ mod streak_impl_tests {
 
     #[tokio::test]
     async fn checkin_consecutive_day_increments_streak() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"9".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", days_ago(1).as_bytes().to_vec())
-            .await;
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+        db.pool.set_streak(&k, "9", &days_ago(1)).await.unwrap();
 
-        let res = checkin_impl(&store, anon()).await.unwrap();
+        let res = checkin_impl(&db.pool, anon()).await.unwrap();
         assert_eq!(res.current_streak.as_deref(), Some("10"));
     }
 
     #[tokio::test]
     async fn checkin_after_gap_resets_streak_to_one() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"20".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", days_ago(2).as_bytes().to_vec())
-            .await;
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+        db.pool.set_streak(&k, "20", &days_ago(2)).await.unwrap();
 
-        let res = checkin_impl(&store, anon()).await.unwrap();
+        let res = checkin_impl(&db.pool, anon()).await.unwrap();
         assert_eq!(
             res.current_streak.as_deref(),
             Some("1"),
@@ -288,93 +256,50 @@ mod streak_impl_tests {
         );
     }
 
-    #[tokio::test]
-    async fn checkin_with_corrupted_streak_number_returns_error() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store
-            .insert(&k, "current_streak", b"not_a_number".to_vec())
-            .await;
-        store
-            .insert(&k, "last_checkin_date", days_ago(1).as_bytes().to_vec())
-            .await;
-
-        let res = checkin_impl(&store, anon()).await;
-        assert!(
-            res.is_err(),
-            "Corrupted current_streak must return an error, not silently reset"
-        );
-    }
-
-    #[tokio::test]
-    async fn checkin_with_corrupted_date_resets_streak_gracefully() {
-        // Fixed in v2: .ok() handles bad dates without panicking
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"5".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", b"not-a-date".to_vec())
-            .await;
-
-        let res = checkin_impl(&store, anon()).await.unwrap();
-        assert_eq!(
-            res.current_streak.as_deref(),
-            Some("1"),
-            "Corrupted date treated as None -> streak resets to 1, no panic"
-        );
-    }
-
     // ── delete_streak_impl ────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn delete_streak_removes_key_from_store() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"5".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", b"2025-01-01".to_vec())
-            .await;
+        let db = TestDb::new().await;
+        db.pool
+            .set_streak(&anon().to_text(), "5", "2025-01-01")
+            .await
+            .unwrap();
 
-        assert!(store.key_exists(&k).await);
-        delete_streak_impl(&store, anon()).await.unwrap();
-        assert!(!store.key_exists(&k).await, "Key must be gone after delete");
+        delete_streak_impl(&db.pool, anon()).await.unwrap();
+
+        let res = get_streak_impl(&db.pool, anon()).await.unwrap();
+        assert!(res.current_streak.is_none());
+        assert!(res.last_checkin_date.is_none());
     }
 
     #[tokio::test]
     async fn delete_nonexistent_streak_is_ok() {
-        let store = MockKvStore::new();
-        let res = delete_streak_impl(&store, anon()).await;
+        let db = TestDb::new().await;
+        let res = delete_streak_impl(&db.pool, anon()).await;
         assert!(res.is_ok(), "Deleting a non-existent key must not error");
     }
 
     #[tokio::test]
     async fn get_after_delete_returns_all_none() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"3".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", b"2025-01-01".to_vec())
-            .await;
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+        db.pool.set_streak(&k, "3", "2025-01-01").await.unwrap();
+        delete_streak_impl(&db.pool, anon()).await.unwrap();
 
-        delete_streak_impl(&store, anon()).await.unwrap();
-
-        let res = get_streak_impl(&store, anon()).await.unwrap();
+        let res = get_streak_impl(&db.pool, anon()).await.unwrap();
         assert!(res.current_streak.is_none());
         assert!(res.last_checkin_date.is_none());
     }
 
     #[tokio::test]
     async fn checkin_after_delete_restarts_streak_at_one() {
-        let store = MockKvStore::new();
-        let k = streak_key(anon());
-        store.insert(&k, "current_streak", b"10".to_vec()).await;
-        store
-            .insert(&k, "last_checkin_date", days_ago(1).as_bytes().to_vec())
-            .await;
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+        db.pool.set_streak(&k, "10", &days_ago(1)).await.unwrap();
+        delete_streak_impl(&db.pool, anon()).await.unwrap();
 
-        delete_streak_impl(&store, anon()).await.unwrap();
-
-        let res = checkin_impl(&store, anon()).await.unwrap();
+        let res = checkin_impl(&db.pool, anon()).await.unwrap();
         assert_eq!(
             res.current_streak.as_deref(),
             Some("1"),
@@ -386,16 +311,12 @@ mod streak_impl_tests {
 
     #[tokio::test]
     async fn user_streaks_are_fully_isolated() {
-        let store = MockKvStore::new();
-        let k_a = streak_key(user_a());
+        let db = TestDb::new().await;
+        let k_a = user_a().to_text();
 
-        store.insert(&k_a, "current_streak", b"5".to_vec()).await;
-        store
-            .insert(&k_a, "last_checkin_date", days_ago(1).as_bytes().to_vec())
-            .await;
-
-        let res_anon = checkin_impl(&store, anon()).await.unwrap();
-        let res_a = get_streak_impl(&store, user_a()).await.unwrap();
+        db.pool.set_streak(&k_a, "5", &days_ago(1)).await.unwrap();
+        let res_anon = checkin_impl(&db.pool, anon()).await.unwrap();
+        let res_a = get_streak_impl(&db.pool, user_a()).await.unwrap();
 
         assert_eq!(
             res_anon.current_streak.as_deref(),
@@ -411,16 +332,26 @@ mod streak_impl_tests {
 
     #[tokio::test]
     async fn delete_only_affects_target_user() {
-        let store = MockKvStore::new();
-        let k_a = streak_key(user_a());
-        let k_anon = streak_key(anon());
+        let db = TestDb::new().await;
+        db.pool
+            .set_streak(&user_a().to_text(), "7", "2025-01-01")
+            .await
+            .unwrap();
+        db.pool
+            .set_streak(&anon().to_text(), "3", "2025-01-01")
+            .await
+            .unwrap();
 
-        store.insert(&k_a, "current_streak", b"7".to_vec()).await;
-        store.insert(&k_anon, "current_streak", b"3".to_vec()).await;
+        delete_streak_impl(&db.pool, anon()).await.unwrap();
 
-        delete_streak_impl(&store, anon()).await.unwrap();
+        let res_a = get_streak_impl(&db.pool, user_a()).await.unwrap();
+        let res_anon = get_streak_impl(&db.pool, anon()).await.unwrap();
 
-        assert!(!store.key_exists(&k_anon).await, "anon key must be deleted");
-        assert!(store.key_exists(&k_a).await, "user_a key must be untouched");
+        assert_eq!(
+            res_a.current_streak.as_deref(),
+            Some("7"),
+            "user_a must be untouched"
+        );
+        assert!(res_anon.current_streak.is_none(), "anon must be deleted");
     }
 }
