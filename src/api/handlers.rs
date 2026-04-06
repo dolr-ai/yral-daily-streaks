@@ -50,8 +50,7 @@ pub async fn get_streak(
         .trim_start_matches("Bearer ");
 
     let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
-    let response = get_streak_impl(&state.db, user_principal)
-        .await?;
+    let response = get_streak_impl(&state.db, user_principal).await?;
 
     Ok(Json(Ok(response)))
 }
@@ -89,8 +88,7 @@ pub async fn checkin(
 
     let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
 
-    let response = checkin_impl(&state.db, user_principal)
-        .await?;
+    let response = checkin_impl(&state.db, user_principal).await?;
 
     Ok(Json(Ok(response)))
 }
@@ -127,8 +125,7 @@ pub async fn delete_streak(
     // Verify JWT token
     crate::auth::verify_token(token, &state.jwt_details)?;
 
-    delete_streak_impl(&state.db, user_principal)
-        .await?;
+    delete_streak_impl(&state.db, user_principal).await?;
 
     Ok(Json(Ok(())))
 }
