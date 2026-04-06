@@ -164,7 +164,9 @@ jobs:
           ENV_JSON=$(jq -n \
             --arg jwt_public_key "$JWT_PUBLIC_KEY" \
             --arg yral_auth_public_key "$YRAL_AUTH_PUBLIC_KEY" \
-            --arg pg_database_url "$PG_DATABASE_URL" \
+            --arg pg_database_password "$PG_DATABASE_PASSWORD" \
+            --arg pg_hosts "$PG_HOSTS" \
+            --arg pg_port "$PG_PORT" \
             '{
               "data": [
                 {"key": "JWT_PUBLIC_KEY", "value": $jwt_public_key, "is_multiline": true},
