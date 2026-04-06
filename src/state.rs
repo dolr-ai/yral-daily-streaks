@@ -13,7 +13,6 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new(app_config: &AppConfig) -> Result<Self> {
-
         let db_pool = PgPoolOptions::new()
             .max_connections(10)
             .connect(&app_config.pg_database_url)

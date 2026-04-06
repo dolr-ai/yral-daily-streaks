@@ -3,16 +3,16 @@ pub mod auth;
 pub mod config;
 pub mod consts;
 pub mod error;
+pub mod middleware;
 pub mod state;
 pub mod types;
 pub mod utils;
-pub mod middleware;
 
 use crate::types::*;
 use axum::{
     extract::Path,
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     Json,
 };
 use std::sync::Arc;

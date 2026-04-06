@@ -5,7 +5,7 @@ use crate::utils::error::{Error, Result};
 use crate::{
     error::ApiResult,
     types::StreakResponse,
-    utils::error::{ErrorWrapper, NullOk, OkWrapper},
+    utils::error::{ErrorWrapper, OkWrapper},
 };
 use axum::{
     extract::{Path, State},
@@ -51,8 +51,7 @@ pub async fn get_streak(
 
     let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
     let response = get_streak_impl(&state.db, user_principal)
-        .await
-        .map_err(|e| e)?;
+        .await?;
 
     Ok(Json(Ok(response)))
 }
@@ -91,8 +90,7 @@ pub async fn checkin(
     let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
 
     let response = checkin_impl(&state.db, user_principal)
-        .await
-        .map_err(|e| e)?;
+        .await?;
 
     Ok(Json(Ok(response)))
 }
@@ -129,11 +127,10 @@ pub async fn delete_streak(
     // Verify JWT token
     crate::auth::verify_token(token, &state.jwt_details)?;
 
-    let response = delete_streak_impl(&state.db, user_principal)
-        .await
-        .map_err(|e| e)?;
+    delete_streak_impl(&state.db, user_principal)
+        .await?;
 
-    Ok(Json(Ok(response)))
+    Ok(Json(Ok(())))
 }
 
 #[utoipa::path(

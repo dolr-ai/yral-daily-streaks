@@ -4,7 +4,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use candid::error;
 use ic_agent::export::PrincipalError;
 use jsonwebtoken::errors as jwt_errors;
 use serde::{Deserialize, Serialize};
@@ -107,10 +106,9 @@ impl IntoResponse for Error {
 impl Error {
     pub fn status_code(&self) -> StatusCode {
         match self {
-            Error::IO(_)
-            | Error::Config(_)
-            | Error::Deser(_)
-            | Error::Unknown(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::IO(_) | Error::Config(_) | Error::Deser(_) | Error::Unknown(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             Error::Jwt(_) | Error::AuthTokenInvalid | Error::AuthTokenMissing => {
                 StatusCode::UNAUTHORIZED
             }
@@ -166,7 +164,7 @@ impl From<config::ConfigError> for ConfigErrorDetail {
                 message: format!(
                     "Configuration file could not be parsed. URI: {:?}, Cause: {}",
                     uri,
-                    cause.to_string()
+                    cause
                 ),
             },
             config::ConfigError::Type {
@@ -179,7 +177,7 @@ impl From<config::ConfigError> for ConfigErrorDetail {
                 message: format!(
                     "Configuration type error. Origin: {:?}, Unexpected: {}, Expected: {}, Key: {:?}",
                     origin,
-                    unexpected.to_string(),
+                    unexpected,
                     expected,
                     key
                 ),
@@ -190,7 +188,7 @@ impl From<config::ConfigError> for ConfigErrorDetail {
             },
             config::ConfigError::Foreign(e) => ConfigErrorDetail {
                 kind: "Foreign".to_string(),
-                message: format!("Foreign error: {}", e.to_string()),
+                message: format!("Foreign error: {}", e),
             },
         }
     }

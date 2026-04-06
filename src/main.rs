@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    routing::{delete, get, patch, post},
+    routing::{delete, get, post},
     Router,
 };
 use sentry_tower::{NewSentryLayer, SentryHttpLayer};
@@ -10,10 +10,10 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use yral_daily_streaks::api::handlers::*;
 use yral_daily_streaks::config::AppConfig;
+use yral_daily_streaks::middleware::create_before_send;
 use yral_daily_streaks::state::AppState;
 use yral_daily_streaks::utils::error::*;
 use yral_daily_streaks::{get_swagger, get_swagger_root, openapi_spec};
-use yral_daily_streaks::middleware::create_before_send;
 
 fn setup_sentry_subscriber() {
     use tracing_subscriber::layer::SubscriberExt;
@@ -45,9 +45,7 @@ async fn main_impl() -> Result<()> {
 
     let state = Arc::new(AppState::new(&conf).await?);
 
-    
-
-     let sentry_tower_layer = ServiceBuilder::new()
+    let sentry_tower_layer = ServiceBuilder::new()
         .layer(NewSentryLayer::new_from_top())
         .layer(SentryHttpLayer::with_transaction());
 
@@ -69,17 +67,16 @@ async fn main_impl() -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(conf.bind_address)
         .await
-        .map_err(|e| Error::IO(e))?;
+        .map_err(Error::IO)?;
 
     log::info!("Server starting on {}", conf.bind_address);
 
-    axum::serve(listener, app).await.map_err(|e| Error::IO(e))?;
+    axum::serve(listener, app).await.map_err(Error::IO)?;
 
     Ok(())
 }
 
 fn main() {
-
     let _guard = sentry::init((
         "https://aedce8bbfdb0012f957dbb8b3de37bec@apm.yral.com/20",
         sentry::ClientOptions {
