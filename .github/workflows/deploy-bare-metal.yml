@@ -115,7 +115,9 @@ jobs:
           secrets: |
             secret/data/yral-daily-streaks/YRAL_AUTH_METADATA_SERVICE_ACCESS_PUBLIC_KEY value | JWT_PUBLIC_KEY ;
             secret/data/yral-daily-streaks/YRAL_AUTH_JWT_VERIFY_PUBLIC_KEY value | YRAL_AUTH_PUBLIC_KEY ;
-            secret/data/yral-daily-streaks/PG_DATABASE_URL value | PG_DATABASE_URL ;
+            secret/data/yral-daily-streaks/PG_DATABASE_PASSWORD value | PG_DATABASE_PASSWORD ;
+            secret/data/yral-daily-streaks/PG_HOSTS value | PG_HOSTS ;
+            secret/data/yral-daily-streaks/PG_PORT value | PG_PORT ;
 
       - name: Sync deployment files to server
         run: |
@@ -136,7 +138,9 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JWT_PUBLIC_KEY: ${{ env.JWT_PUBLIC_KEY }}
           YRAL_AUTH_PUBLIC_KEY: ${{ env.YRAL_AUTH_PUBLIC_KEY }}
-          PG_DATABASE_URL: ${{ env.PG_DATABASE_URL }}
+          PG_DATABASE_PASSWORD: ${{ env.PG_DATABASE_PASSWORD }}
+          PG_HOSTS: ${{ env.PG_HOSTS }}
+          PG_PORT: ${{ env.PG_PORT }}
         run: |
           # Create deployment directory if not exists
           ssh $SERVER_USER@$SERVER_HOST "mkdir -p /home/yral-daily-streaks"
@@ -158,7 +162,9 @@ jobs:
             BIND_ADDRESS=0.0.0.0:3000 \
             JWT_PUBLIC_KEY='$JWT_PUBLIC_KEY' \
             YRAL_AUTH_PUBLIC_KEY='$YRAL_AUTH_PUBLIC_KEY' \
-            PG_DATABASE_URL='$PG_DATABASE_URL' \
+            PG_DATABASE_PASSWORD='$PG_DATABASE_PASSWORD' \
+            PG_HOSTS='$PG_HOSTS' \
+            PG_PORT='$PG_PORT' \
             docker compose up -d
 
             echo 'Waiting for services to start...'

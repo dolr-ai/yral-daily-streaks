@@ -124,7 +124,6 @@ pub async fn delete_streak(
 
     // Verify JWT token
     crate::auth::verify_token(token, &state.jwt_details)?;
-
     delete_streak_impl(&state.db, user_principal).await?;
 
     Ok(Json(Ok(())))

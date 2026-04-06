@@ -2,6 +2,7 @@ pub mod api;
 pub mod auth;
 pub mod config;
 pub mod consts;
+pub mod db_pool;
 pub mod error;
 pub mod middleware;
 pub mod state;

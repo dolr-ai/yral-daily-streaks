@@ -91,7 +91,9 @@ jobs:
           secrets: |
             secret/data/yral-daily-streaks/YRAL_AUTH_METADATA_SERVICE_ACCESS_PUBLIC_KEY value | JWT_PUBLIC_KEY ;
             secret/data/yral-daily-streaks/YRAL_AUTH_JWT_VERIFY_PUBLIC_KEY value | YRAL_AUTH_PUBLIC_KEY ;
-            secret/data/yral-daily-streaks/PG_DATABASE_URL value | PG_DATABASE_URL ;
+            secret/data/yral-daily-streaks/PG_DATABASE_PASSWORD value | PG_DATABASE_PASSWORD ;
+            secret/data/yral-daily-streaks/PG_HOSTS value | PG_HOSTS ;
+            secret/data/yral-daily-streaks/PG_PORT value | PG_PORT ;
             secret/data/COOLIFY_TOKEN value | COOLIFY_TOKEN ;
             secret/data/COOLIFY_PROJECT_UUID value | COOLIFY_PROJECT_UUID ;
             secret/data/COOLIFY_SERVER_UUID value | COOLIFY_SERVER_UUID ;
@@ -152,7 +154,9 @@ jobs:
           # Secrets from GitHub
           JWT_PUBLIC_KEY: ${{ env.JWT_PUBLIC_KEY }}
           YRAL_AUTH_PUBLIC_KEY: ${{ env.YRAL_AUTH_PUBLIC_KEY }}
-          PG_DATABASE_URL: ${{ env.PG_DATABASE_URL }}
+          PG_DATABASE_PASSWORD: ${{ env.PG_DATABASE_PASSWORD }}
+          PG_HOSTS: ${{ env.PG_HOSTS }}
+          PG_PORT: ${{ env.PG_PORT }}      
         run: |
           APP_UUID="${{ steps.coolify_app.outputs.app_uuid }}"
           flatten() { echo "$1" | tr -d '\n\r'; }
@@ -165,7 +169,9 @@ jobs:
               "data": [
                 {"key": "JWT_PUBLIC_KEY", "value": $jwt_public_key, "is_multiline": true},
                 {"key": "YRAL_AUTH_PUBLIC_KEY", "value": $yral_auth_public_key, "is_multiline": true},
-                {"key": "PG_DATABASE_URL", "value": $pg_database_url, "is_multiline": false}
+                {"key": "PG_DATABASE_PASSWORD", "value": $pg_database_password, "is_multiline": false},
+                {"key": "PG_HOSTS", "value": $pg_hosts, "is_multiline": false},
+                {"key": "PG_PORT", "value": $pg_port, "is_multiline": false}
               ]
             }')
 

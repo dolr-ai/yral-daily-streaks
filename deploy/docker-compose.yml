@@ -10,8 +10,10 @@ services:
     environment:
       - BIND_ADDRESS=0.0.0.0:3000 
       - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
-      - PG_DATABASE_URL=${PG_DATABASE_URL}
       - YRAL_AUTH_PUBLIC_KEY=${YRAL_AUTH_PUBLIC_KEY}
+      - PG_DATABASE_PASSWORD=${PG_DATABASE_PASSWORD}
+      - PG_HOSTS=${PG_HOSTS}
+      - PG_PORT=${PG_PORT}
     networks:
       - proxy
         
