@@ -165,7 +165,7 @@ jobs:
               "data": [
                 {"key": "JWT_PUBLIC_KEY", "value": $jwt_public_key, "is_multiline": true},
                 {"key": "YRAL_AUTH_PUBLIC_KEY", "value": $yral_auth_public_key, "is_multiline": true},
-                {"key": "PG_DATABASE_URL", "value": $pg_database_url, "is_multiline": false},
+                {"key": "PG_DATABASE_URL", "value": $pg_database_url, "is_multiline": false}
               ]
             }')
 
