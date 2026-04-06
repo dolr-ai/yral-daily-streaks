@@ -155,7 +155,7 @@ jobs:
             echo 'Starting services...'
             APP_IMAGE=ghcr.io/${{ github.repository }} \
             IMAGE_TAG=${{ github.sha }} \
-            BIND_ADDRESS=0.0.0.0:8080 \
+            BIND_ADDRESS=0.0.0.0:3000 \
             JWT_PUBLIC_KEY='$JWT_PUBLIC_KEY' \
             YRAL_AUTH_PUBLIC_KEY='$YRAL_AUTH_PUBLIC_KEY' \
             PG_DATABASE_URL='$PG_DATABASE_URL' \

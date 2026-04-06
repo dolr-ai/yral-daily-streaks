@@ -6,6 +6,7 @@ pub mod error;
 pub mod state;
 pub mod types;
 pub mod utils;
+pub mod middleware;
 
 use crate::types::*;
 use axum::{
