@@ -1,0 +1,29 @@
+use crate::auth::{init_jwt, JwtDetails};
+use crate::config::AppConfig;
+use crate::db_pool::DbPool;
+use crate::utils::error::{Error, Result};
+use crate::utils::yral_auth_jwt::YralAuthJwt;
+#[derive(Clone)]
+pub struct AppState {
+    pub db: DbPool,
+    pub jwt_details: JwtDetails,
+    pub yral_auth_jwt: YralAuthJwt,
+}
+
+impl AppState {
+    pub async fn new(app_config: &AppConfig) -> Result<Self> {
+        let db_pool = DbPool::new(
+            &app_config.pg_hosts,
+            &app_config.pg_database_password,
+            app_config.pg_port,
+        )
+        .await
+        .map_err(|e| Error::Unknown(e.to_string()))?;
+
+        Ok(AppState {
+            db: db_pool,
+            jwt_details: init_jwt(app_config)?,
+            yral_auth_jwt: YralAuthJwt::init(app_config.yral_auth_public_key.clone())?,
+        })
+    }
+}

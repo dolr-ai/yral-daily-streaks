@@ -1,0 +1,28 @@
+use std::net::SocketAddr;
+
+use config::{Config, ConfigError, Environment, File};
+use serde::Deserialize;
+use serde_with::serde_as;
+
+#[serde_as]
+#[derive(Deserialize)]
+pub struct AppConfig {
+    pub bind_address: SocketAddr,
+    pub jwt_public_key: String,
+    pub yral_auth_public_key: String,
+    pub pg_database_password: String,
+    pub pg_hosts: String,
+    pub pg_port: u16,
+}
+
+impl AppConfig {
+    pub fn load() -> Result<Self, ConfigError> {
+        let conf = Config::builder()
+            .add_source(File::with_name("config.toml").required(false))
+            .add_source(File::with_name(".env").required(false))
+            .add_source(Environment::default())
+            .build()?;
+
+        conf.try_deserialize()
+    }
+}

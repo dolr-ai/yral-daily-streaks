@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  yral-daily-streaks:
+    image: ${APP_IMAGE:-ghcr.io/dolr-ai/yral-daily-streaks}:${IMAGE_TAG:-latest}
+    container_name: yral-daily-streaks
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - BIND_ADDRESS=0.0.0.0:3000 
+      - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
+      - YRAL_AUTH_PUBLIC_KEY=${YRAL_AUTH_PUBLIC_KEY}
+      - PG_DATABASE_PASSWORD=${PG_DATABASE_PASSWORD}
+      - PG_HOSTS=${PG_HOSTS}
+      - PG_PORT=${PG_PORT}
+    networks:
+      - proxy
+        
+networks:
+  proxy:
+    external: true
