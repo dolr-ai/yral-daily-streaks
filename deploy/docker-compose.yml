@@ -6,7 +6,7 @@ services:
     container_name: yral-daily-streaks
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "3000:3000"
     environment:
       - BIND_ADDRESS=0.0.0.0:3000 
       - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
