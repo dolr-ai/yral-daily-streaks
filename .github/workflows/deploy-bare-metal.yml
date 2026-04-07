@@ -89,22 +89,6 @@ jobs:
       max-parallel: 1
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.HETZNER_BARE_METAL_GITHUB_ACTIONS_SSH_PRIVATE_KEY }}
-
-      - name: Add server to known hosts
-        run: |
-          ssh-keyscan -H ${{matrix.server.host}} >> ~/.ssh/known_hosts
-
-      - name: Check server connectivity
-        run: |
-          ssh -o ConnectTimeout=10 root@${{matrix.server.host}} "echo 'Server connection successful'"
-
       - name: Import Secrets from Vault
         uses: hashicorp/vault-action@v3
         with:
@@ -116,25 +100,42 @@ jobs:
             secret/data/yral-daily-streaks/YRAL_AUTH_METADATA_SERVICE_ACCESS_PUBLIC_KEY value | JWT_PUBLIC_KEY ;
             secret/data/yral-daily-streaks/YRAL_AUTH_JWT_VERIFY_PUBLIC_KEY value | YRAL_AUTH_PUBLIC_KEY ;
             secret/data/yral-daily-streaks/PG_DATABASE_PASSWORD value | PG_DATABASE_PASSWORD ;
+            secret/data/yral-daily-streaks/NAITIK_MACHINE_ACCESS_PRIVATE_KEY value | NAITIK_MACHINE_ACCESS_PRIVATE_KEY ;
             secret/data/yral-daily-streaks/PG_HOSTS value | PG_HOSTS ;
             secret/data/yral-daily-streaks/PG_PORT value | PG_PORT ;
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ env.NAITIK_MACHINE_ACCESS_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{matrix.server.host}} >> ~/.ssh/known_hosts
+
+      - name: Check server connectivity
+        run: |
+          ssh -o ConnectTimeout=10 naitik@${{matrix.server.host}} "echo 'Server connection successful'"
 
       - name: Sync deployment files to server
         run: |
           rsync -avz --delete \
             ./deploy/ \
-            root@${{matrix.server.host}}:/home/yral-daily-streaks/
+            naitik@${{matrix.server.host}}:/yral-daily-streaks/
 
       - name: Log in to GitHub Container Registry on server
         run: |
-          ssh root@${{matrix.server.host}} "
+          ssh naitik@${{matrix.server.host}} "
             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           "
 
       - name: Deploy to ${{ matrix.server.name }} with docker compose
         env:
           SERVER_HOST: ${{ matrix.server.host }}
-          SERVER_USER: root
+          SERVER_USER: naitik
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JWT_PUBLIC_KEY: ${{ env.JWT_PUBLIC_KEY }}
           YRAL_AUTH_PUBLIC_KEY: ${{ env.YRAL_AUTH_PUBLIC_KEY }}
@@ -143,10 +144,10 @@ jobs:
           PG_PORT: ${{ env.PG_PORT }}
         run: |
           # Create deployment directory if not exists
-          ssh $SERVER_USER@$SERVER_HOST "mkdir -p /home/yral-daily-streaks"
+          ssh $SERVER_USER@$SERVER_HOST "mkdir -p yral-daily-streaks"
           
           ssh $SERVER_USER@$SERVER_HOST "
-            cd /home/yral-daily-streaks
+            cd yral-daily-streaks
             
             echo 'Pulling latest images...'
             APP_IMAGE=ghcr.io/${{ github.repository }} \
@@ -175,8 +176,8 @@ jobs:
       
       - name: Verify deployment
         run: |
-          ssh root@${{ matrix.server.host }} "
-            cd /home/yral-daily-streaks
+          ssh naitik@${{ matrix.server.host }} "
+            cd yral-daily-streaks
             echo '=== Container Status ==='
             docker compose ps
             echo ''
