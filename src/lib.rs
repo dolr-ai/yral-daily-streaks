@@ -44,7 +44,6 @@ impl Modify for BearerAuth {
 #[openapi(
     paths(
         api::handlers::healthz,
-        api::handlers::get_streak,
         api::handlers::checkin,
         api::handlers::delete_streak
     ),
@@ -56,7 +55,6 @@ impl Modify for BearerAuth {
     modifiers(&BearerAuth),
     tags(
         (name = "Health", description = "Health check"),
-        (name = "Get Steak", description = "Get streak count for logged in user"),
         (name = "Checkin", description = "Checkin the streak for logged in user"),
         (name = "Delete Streak", description = "Delete a streak for logged in user")
     ),

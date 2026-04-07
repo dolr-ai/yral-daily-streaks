@@ -35,7 +35,7 @@ pub mod db_test_helpers {
                 "CREATE TABLE IF NOT EXISTS daily_streaks (
                     user_principal TEXT PRIMARY KEY,
                     current_streak  BIGINT NOT NULL DEFAULT 1,
-                    last_checkin_date DATE NOT NULL
+                    last_checkin_epoch_ms BIGINT NOT NULL
                 )",
             )
             .execute(&pool)

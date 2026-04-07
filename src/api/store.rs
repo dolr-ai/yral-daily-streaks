@@ -2,51 +2,55 @@ use sqlx::Row;
 
 use crate::{
     db_pool::DbPool,
-    types::StreakResponse,
+    types::StreakDbRow,
     utils::error::{Error, Result},
 };
 
 #[async_trait::async_trait]
 pub trait StreakStore: Send + Sync {
-    async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakResponse>>;
-    async fn set_streak(&self, user_principal: &str, streak: &str, date: &str) -> Result<()>;
+    async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakDbRow>>;
+    async fn set_streak(
+        &self,
+        user_principal: &str,
+        streak: i64,
+        last_checkin_epoch_ms: i64,
+    ) -> Result<()>;
     async fn delete_streak(&self, user_principal: &str) -> Result<()>;
 }
 
 #[async_trait::async_trait]
 impl StreakStore for sqlx::PgPool {
-    async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakResponse>> {
+    async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakDbRow>> {
         let row = sqlx::query(
-            "SELECT current_streak, last_checkin_date FROM daily_streaks WHERE user_principal = $1",
+            "SELECT current_streak, last_checkin_epoch_ms FROM daily_streaks WHERE user_principal = $1",
         )
         .bind(user_principal)
         .fetch_optional(self as &sqlx::PgPool)
         .await
         .map_err(Error::SqlxError)?;
 
-        Ok(row.map(|r| {
-            let streak: i64 = r.get("current_streak");
-            let date: chrono::NaiveDate = r.get("last_checkin_date");
-
-            StreakResponse {
-                current_streak: Some(streak.to_string()),
-                last_checkin_date: Some(date.to_string()),
-            }
+        Ok(row.map(|r| StreakDbRow {
+            current_streak: r.get("current_streak"),
+            last_checkin_epoch_ms: r.get("last_checkin_epoch_ms"),
         }))
     }
 
-    async fn set_streak(&self, user_principal: &str, streak: &str, date: &str) -> Result<()> {
-        let current_streak: i64 = streak.parse().unwrap_or(1);
-        let last_checkin = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .map_err(|_| Error::Unknown("Invalid date".to_string()))?;
-
-        let _respose = sqlx::query(
-            "INSERT INTO daily_streaks (user_principal, current_streak, last_checkin_date) VALUES ($1, $2, $3)
-             ON CONFLICT (user_principal) DO UPDATE SET current_streak = EXCLUDED.current_streak, last_checkin_date = EXCLUDED.last_checkin_date",
+    async fn set_streak(
+        &self,
+        user_principal: &str,
+        streak: i64,
+        last_checkin_epoch_ms: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO daily_streaks (user_principal, current_streak, last_checkin_epoch_ms)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (user_principal) DO UPDATE
+               SET current_streak = EXCLUDED.current_streak,
+                   last_checkin_epoch_ms = EXCLUDED.last_checkin_epoch_ms",
         )
         .bind(user_principal)
-        .bind(current_streak)
-        .bind(last_checkin)
+        .bind(streak)
+        .bind(last_checkin_epoch_ms)
         .execute(self)
         .await
         .map_err(Error::SqlxError)?;
@@ -55,7 +59,7 @@ impl StreakStore for sqlx::PgPool {
     }
 
     async fn delete_streak(&self, user_principal: &str) -> Result<()> {
-        let _response = sqlx::query("DELETE FROM daily_streaks WHERE user_principal = $1")
+        sqlx::query("DELETE FROM daily_streaks WHERE user_principal = $1")
             .bind(user_principal)
             .execute(self)
             .await
@@ -66,56 +70,55 @@ impl StreakStore for sqlx::PgPool {
 
 #[async_trait::async_trait]
 impl StreakStore for DbPool {
-    async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakResponse>> {
+    async fn get_streak(&self, user_principal: &str) -> Result<Option<StreakDbRow>> {
         let row = self.execute(|pool| async move {
             sqlx::query(
-                "SELECT current_streak, last_checkin_date FROM daily_streaks WHERE user_principal = $1",
+                "SELECT current_streak, last_checkin_epoch_ms FROM daily_streaks WHERE user_principal = $1",
             )
             .bind(user_principal)
             .fetch_optional(&pool)
             .await
         }).await?;
 
-        Ok(row.map(|r| {
-            let streak: i64 = r.get("current_streak");
-            let date: chrono::NaiveDate = r.get("last_checkin_date");
-
-            StreakResponse {
-                current_streak: Some(streak.to_string()),
-                last_checkin_date: Some(date.to_string()),
-            }
+        Ok(row.map(|r| StreakDbRow {
+            current_streak: r.get("current_streak"),
+            last_checkin_epoch_ms: r.get("last_checkin_epoch_ms"),
         }))
     }
 
-    async fn set_streak(&self, user_principal: &str, streak: &str, date: &str) -> Result<()> {
-        let current_streak: i64 = streak.parse().unwrap_or(1);
-        let last_checkin = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .map_err(|_| Error::Unknown("Invalid date".to_string()))?;
-
-        let _respose = self.execute(|pool| async move {
+    async fn set_streak(
+        &self,
+        user_principal: &str,
+        streak: i64,
+        last_checkin_epoch_ms: i64,
+    ) -> Result<()> {
+        self.execute(|pool| async move {
             sqlx::query(
-                "INSERT INTO daily_streaks (user_principal, current_streak, last_checkin_date) VALUES ($1, $2, $3)
-                 ON CONFLICT (user_principal) DO UPDATE SET current_streak = EXCLUDED.current_streak, last_checkin_date = EXCLUDED.last_checkin_date",
+                "INSERT INTO daily_streaks (user_principal, current_streak, last_checkin_epoch_ms)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (user_principal) DO UPDATE
+                   SET current_streak = EXCLUDED.current_streak,
+                       last_checkin_epoch_ms = EXCLUDED.last_checkin_epoch_ms",
             )
             .bind(user_principal)
-            .bind(current_streak)
-            .bind(last_checkin)
+            .bind(streak)
+            .bind(last_checkin_epoch_ms)
             .execute(&pool)
             .await
-        }).await?;
+        })
+        .await?;
 
         Ok(())
     }
 
     async fn delete_streak(&self, user_principal: &str) -> Result<()> {
-        let _response = self
-            .execute(|pool| async move {
-                sqlx::query("DELETE FROM daily_streaks WHERE user_principal = $1")
-                    .bind(user_principal)
-                    .execute(&pool)
-                    .await
-            })
-            .await?;
+        self.execute(|pool| async move {
+            sqlx::query("DELETE FROM daily_streaks WHERE user_principal = $1")
+                .bind(user_principal)
+                .execute(&pool)
+                .await
+        })
+        .await?;
         Ok(())
     }
 }

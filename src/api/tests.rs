@@ -1,131 +1,167 @@
 #[cfg(test)]
 mod streak_logic_tests {
-    use crate::api::handlers::compute_streak;
-    use chrono::{Duration, Utc};
-    use chrono_tz::Asia::Kolkata;
+    use crate::types::compute_streak;
 
-    fn today() -> String {
-        Utc::now().with_timezone(&Kolkata).date_naive().to_string()
+    fn now_ms() -> i64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
     }
 
-    fn days_ago(n: i64) -> String {
-        (Utc::now().with_timezone(&Kolkata).date_naive() - Duration::days(n)).to_string()
+    fn ms_ago(hours: i64) -> i64 {
+        now_ms() - hours * 60 * 60 * 1000
     }
 
     // ── No prior checkin ──────────────────────────────────────────────────────
 
     #[test]
     fn new_user_gets_streak_of_one() {
-        let (streak, date) = compute_streak(None, 0);
-        assert_eq!(streak, "1");
-        assert_eq!(date, today());
+        let now = now_ms();
+        let (streak, just_incremented, action, last_credited) = compute_streak(None, 0, now);
+        assert_eq!(streak, 1);
+        assert!(just_incremented);
+        assert_eq!(action, "incremented");
+        assert_eq!(last_credited, now);
     }
 
     #[test]
     fn new_user_ignores_nonzero_current_value() {
-        // current is irrelevant when there's no prior date — should still reset to 1
-        let (streak, date) = compute_streak(None, 99);
-        assert_eq!(streak, "1");
-        assert_eq!(date, today());
-    }
-
-    // ── Already checked in today ──────────────────────────────────────────────
-
-    #[test]
-    fn same_day_checkin_is_idempotent() {
-        let (streak, date) = compute_streak(Some(&today()), 5);
+        let now = now_ms();
+        let (streak, just_incremented, action, _) = compute_streak(None, 99, now);
         assert_eq!(
-            streak, "5",
-            "Streak must not change on a same-day re-checkin"
+            streak, 1,
+            "New user must always start at 1 regardless of passed current"
         );
-        assert_eq!(date, today());
+        assert!(just_incremented);
+        assert_eq!(action, "incremented");
     }
 
-    #[test]
-    fn same_day_checkin_with_streak_one_stays_at_one() {
-        let (streak, _) = compute_streak(Some(&today()), 1);
-        assert_eq!(streak, "1");
-    }
-
-    // ── Consecutive day ───────────────────────────────────────────────────────
+    // ── Already checked in within 24h ─────────────────────────────────────────
 
     #[test]
-    fn yesterday_checkin_increments_streak() {
-        let (streak, date) = compute_streak(Some(&days_ago(1)), 4);
+    fn checkin_within_24h_is_idempotent() {
+        let now = now_ms();
+        let last = ms_ago(12); // 12 hours ago
+        let (streak, just_incremented, action, last_credited) = compute_streak(Some(last), 5, now);
+        assert_eq!(streak, 5, "Streak must not change within 24h window");
+        assert!(!just_incremented);
+        assert_eq!(action, "unchanged");
         assert_eq!(
-            streak, "5",
-            "Consecutive day must increment streak by exactly 1"
+            last_credited, last,
+            "last_credited must not update when unchanged"
         );
-        assert_eq!(date, today());
+    }
+
+    #[test]
+    fn checkin_just_under_24h_is_unchanged() {
+        let now = now_ms();
+        let last = ms_ago(23); // 23 hours ago — still within window
+        let (streak, _, action, _) = compute_streak(Some(last), 3, now);
+        assert_eq!(streak, 3);
+        assert_eq!(action, "unchanged");
+    }
+
+    // ── Consecutive checkin (24h–48h window) ──────────────────────────────────
+
+    #[test]
+    fn checkin_after_24h_increments_streak() {
+        let now = now_ms();
+        let last = ms_ago(25);
+        let (streak, just_incremented, action, last_credited) = compute_streak(Some(last), 4, now);
+        assert_eq!(streak, 5, "Checkin in 24-48h window must increment by 1");
+        assert!(just_incremented);
+        assert_eq!(action, "incremented");
+        assert_eq!(
+            last_credited, now,
+            "last_credited must update to now on increment"
+        );
+    }
+
+    #[test]
+    fn checkin_at_exactly_24h_increments_streak() {
+        let now = now_ms();
+        let last = now - 24 * 60 * 60 * 1000;
+        let (streak, just_incremented, action, _) = compute_streak(Some(last), 1, now);
+        assert_eq!(streak, 2);
+        assert!(just_incremented);
+        assert_eq!(action, "incremented");
+    }
+
+    #[test]
+    fn checkin_just_under_48h_still_increments() {
+        let now = now_ms();
+        let last = now - (48 * 60 * 60 * 1000 - 1); // 1ms before 48h boundary
+        let (streak, just_incremented, action, _) = compute_streak(Some(last), 9, now);
+        assert_eq!(streak, 10);
+        assert!(just_incremented);
+        assert_eq!(action, "incremented");
     }
 
     #[test]
     fn first_consecutive_checkin_goes_from_one_to_two() {
-        let (streak, _) = compute_streak(Some(&days_ago(1)), 1);
-        assert_eq!(streak, "2");
+        let now = now_ms();
+        let (streak, _, _, _) = compute_streak(Some(ms_ago(25)), 1, now);
+        assert_eq!(streak, 2);
     }
 
     #[test]
     fn large_consecutive_streak_increments_correctly() {
-        let (streak, _) = compute_streak(Some(&days_ago(1)), 99);
-        assert_eq!(streak, "100");
+        let now = now_ms();
+        let (streak, _, _, _) = compute_streak(Some(ms_ago(25)), 99, now);
+        assert_eq!(streak, 100);
     }
 
-    // ── Streak broken ─────────────────────────────────────────────────────────
+    // ── Streak broken (48h+) ──────────────────────────────────────────────────
 
     #[test]
-    fn two_day_gap_resets_streak_to_one() {
-        let (streak, date) = compute_streak(Some(&days_ago(2)), 10);
-        assert_eq!(streak, "1", "A 2-day gap must reset the streak to 1");
-        assert_eq!(date, today());
-    }
-
-    #[test]
-    fn thirty_day_gap_resets_streak_to_one() {
-        let (streak, _) = compute_streak(Some(&days_ago(30)), 99);
-        assert_eq!(streak, "1");
-    }
-
-    #[test]
-    fn exactly_two_day_gap_is_broken_not_consecutive() {
-        let (streak, _) = compute_streak(Some(&days_ago(2)), 7);
-        assert_eq!(streak, "1");
-    }
-
-    // ── Malformed / corrupted date ────────────────────────────────────────────
-
-    #[test]
-    fn malformed_date_does_not_panic_and_resets_streak() {
-        // A corrupted date is treated as None -> streak resets to 1.
-        let (streak, date) = compute_streak(Some("not-a-date"), 5);
-        assert_eq!(streak, "1", "Corrupted date must reset streak safely to 1");
-        assert_eq!(date, today());
+    fn checkin_after_48h_resets_streak_to_one() {
+        let now = now_ms();
+        let last = ms_ago(49);
+        let (streak, just_incremented, action, last_credited) = compute_streak(Some(last), 10, now);
+        assert_eq!(streak, 1, "48h+ gap must reset streak to 1");
+        assert!(just_incremented, "reset counts as just_incremented");
+        assert_eq!(action, "reset");
+        assert_eq!(
+            last_credited, now,
+            "last_credited must update to now on reset"
+        );
     }
 
     #[test]
-    fn wrong_date_format_resets_streak() {
-        // ISO with time component -- not the expected "%Y-%m-%d"
-        let (streak, _) = compute_streak(Some("2025-01-15T10:00:00Z"), 3);
-        assert_eq!(streak, "1");
+    fn checkin_at_exactly_48h_resets_streak() {
+        let now = now_ms();
+        let last = now - 48 * 60 * 60 * 1000;
+        let (streak, _, action, _) = compute_streak(Some(last), 7, now);
+        assert_eq!(streak, 1);
+        assert_eq!(action, "reset");
     }
 
-    // ── Zero current streak edge case ─────────────────────────────────────────
+    #[test]
+    fn week_old_checkin_resets_streak_to_one() {
+        let now = now_ms();
+        let (streak, _, action, _) = compute_streak(Some(ms_ago(7 * 24)), 99, now);
+        assert_eq!(streak, 1);
+        assert_eq!(action, "reset");
+    }
+
+    // ── Zero streak edge case ─────────────────────────────────────────────────
 
     #[test]
-    fn zero_streak_yesterday_increments_to_one() {
-        // Must not underflow (u64): 0 + 1 = 1
-        let (streak, _) = compute_streak(Some(&days_ago(1)), 0);
-        assert_eq!(streak, "1");
+    fn zero_streak_in_window_increments_to_one() {
+        let now = now_ms();
+        let (streak, _, _, _) = compute_streak(Some(ms_ago(25)), 0, now);
+        assert_eq!(streak, 1, "0 + 1 must not underflow");
     }
 }
 
 #[cfg(test)]
 mod streak_impl_tests {
     use candid::Principal;
-    use chrono::{Duration, Utc};
-    use chrono_tz::Asia::Kolkata;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-    use crate::api::handlers::{checkin_impl, delete_streak_impl, get_streak_impl};
+    use crate::api::handlers::{checkin_impl, delete_streak_impl};
     use crate::api::store::StreakStore;
     use crate::utils::test_helper::db_test_helpers::TestDb;
 
@@ -137,140 +173,167 @@ mod streak_impl_tests {
         Principal::from_text("aaaaa-aa").unwrap()
     }
 
-    fn today() -> String {
-        Utc::now().with_timezone(&Kolkata).date_naive().to_string()
+    fn now_ms() -> i64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
     }
 
-    fn days_ago(n: i64) -> String {
-        (Utc::now().with_timezone(&Kolkata).date_naive() - Duration::days(n)).to_string()
-    }
-
-    // ── get_streak_impl ───────────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn get_streak_new_user_returns_all_none() {
-        let db = TestDb::new().await;
-        let res = get_streak_impl(&db.pool, anon()).await.unwrap();
-        assert!(res.current_streak.is_none());
-        assert!(res.last_checkin_date.is_none());
-    }
-
-    #[tokio::test]
-    async fn get_streak_returns_stored_values_verbatim() {
-        let db = TestDb::new().await;
-        let k = anon().to_text();
-        db.pool.set_streak(&k, "7", "2025-01-01").await.unwrap();
-
-        let res = get_streak_impl(&db.pool, anon()).await.unwrap();
-        assert_eq!(res.current_streak.as_deref(), Some("7"));
-        assert_eq!(res.last_checkin_date.as_deref(), Some("2025-01-01"));
-    }
-
-    #[tokio::test]
-    async fn get_streak_does_not_mutate_store() {
-        let db = TestDb::new().await;
-        let k = anon().to_text();
-        db.pool.set_streak(&k, "3", "2025-01-01").await.unwrap();
-
-        get_streak_impl(&db.pool, anon()).await.unwrap();
-        let raw = db.pool.get_streak(&k).await;
-        assert_eq!(
-            raw.unwrap().unwrap().current_streak,
-            Some("3".to_string()),
-            "get_streak must be a pure read -- store must be unchanged"
-        );
+    fn ms_ago(hours: i64) -> i64 {
+        now_ms() - hours * 60 * 60 * 1000
     }
 
     // ── checkin_impl ──────────────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn first_checkin_returns_streak_one_and_todays_date() {
+    async fn first_checkin_returns_streak_one() {
         let db = TestDb::new().await;
         let res = checkin_impl(&db.pool, anon()).await.unwrap();
-        assert_eq!(res.current_streak.as_deref(), Some("1"));
-        assert_eq!(res.last_checkin_date.as_deref(), Some(today().as_str()));
-    }
 
-    #[tokio::test]
-    async fn checkin_persists_updated_streak_to_store() {
-        let db = TestDb::new().await;
-        let k = anon().to_text();
-        let yesterday = days_ago(1);
-
-        db.pool.set_streak(&k, "3", &yesterday).await.unwrap();
-        let res = checkin_impl(&db.pool, anon()).await.unwrap();
-
-        // Returned value must already be correct
-        assert_eq!(res.current_streak.as_deref(), Some("4"));
-        assert_eq!(res.last_checkin_date.as_deref(), Some(today().as_str()));
-
-        let streak_data = db.pool.get_streak(&k).await.unwrap().unwrap();
-
+        assert_eq!(res.streak_count, 1);
+        assert!(res.just_incremented);
+        assert_eq!(res.streak_action, "incremented");
+        assert!(res.last_credited_at_epoch_ms > 0);
         assert_eq!(
-            streak_data.current_streak.as_deref(),
-            Some("4"),
-            "BUG: current_streak not written back to store after checkin"
+            res.next_increment_eligible_at_epoch_ms,
+            res.last_credited_at_epoch_ms + 24 * 60 * 60 * 1000
         );
         assert_eq!(
-            streak_data.last_checkin_date.as_deref(),
-            Some(today().as_str()),
-            "BUG: last_checkin_date not written back to store after checkin"
+            res.streak_expires_at_epoch_ms,
+            res.last_credited_at_epoch_ms + 48 * 60 * 60 * 1000
         );
     }
 
     #[tokio::test]
-    async fn double_checkin_same_day_is_idempotent() {
+    async fn first_checkin_persists_to_store() {
         let db = TestDb::new().await;
         let k = anon().to_text();
-        db.pool.set_streak(&k, "5", today().as_str()).await.unwrap();
+
+        checkin_impl(&db.pool, anon()).await.unwrap();
+
+        let row = db.pool.get_streak(&k).await.unwrap().unwrap();
+        assert_eq!(row.current_streak, 1);
+        assert!(row.last_checkin_epoch_ms > 0);
+    }
+
+    #[tokio::test]
+    async fn double_checkin_within_24h_is_idempotent() {
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+
+        // Seed: checked in 12 hours ago with streak 5
+        db.pool.set_streak(&k, 5, ms_ago(12)).await.unwrap();
 
         let res = checkin_impl(&db.pool, anon()).await.unwrap();
+        assert_eq!(res.streak_count, 5, "Streak must not change within 24h");
+        assert!(!res.just_incremented);
+        assert_eq!(res.streak_action, "unchanged");
+    }
+
+    #[tokio::test]
+    async fn unchanged_checkin_does_not_mutate_store() {
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+        let seeded_at = ms_ago(12);
+
+        db.pool.set_streak(&k, 5, seeded_at).await.unwrap();
+        checkin_impl(&db.pool, anon()).await.unwrap();
+
+        let row = db.pool.get_streak(&k).await.unwrap().unwrap();
         assert_eq!(
-            res.current_streak.as_deref(),
-            Some("5"),
-            "Same-day double checkin must not increment streak"
+            row.last_checkin_epoch_ms, seeded_at,
+            "Store must not be mutated on unchanged checkin"
         );
     }
 
     #[tokio::test]
-    async fn checkin_consecutive_day_increments_streak() {
+    async fn checkin_in_window_increments_streak() {
         let db = TestDb::new().await;
         let k = anon().to_text();
-        db.pool.set_streak(&k, "9", &days_ago(1)).await.unwrap();
+
+        db.pool.set_streak(&k, 9, ms_ago(25)).await.unwrap();
 
         let res = checkin_impl(&db.pool, anon()).await.unwrap();
-        assert_eq!(res.current_streak.as_deref(), Some("10"));
+        assert_eq!(res.streak_count, 10);
+        assert!(res.just_incremented);
+        assert_eq!(res.streak_action, "incremented");
     }
 
     #[tokio::test]
-    async fn checkin_after_gap_resets_streak_to_one() {
+    async fn checkin_in_window_persists_updated_streak() {
         let db = TestDb::new().await;
         let k = anon().to_text();
-        db.pool.set_streak(&k, "20", &days_ago(2)).await.unwrap();
+
+        db.pool.set_streak(&k, 3, ms_ago(25)).await.unwrap();
+        checkin_impl(&db.pool, anon()).await.unwrap();
+
+        let row = db.pool.get_streak(&k).await.unwrap().unwrap();
+        assert_eq!(row.current_streak, 4, "Updated streak must be written back");
+        assert!(
+            row.last_checkin_epoch_ms > ms_ago(1),
+            "last_checkin_epoch_ms must be updated to approximately now"
+        );
+    }
+
+    #[tokio::test]
+    async fn checkin_after_48h_resets_streak_to_one() {
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+
+        db.pool.set_streak(&k, 20, ms_ago(49)).await.unwrap();
 
         let res = checkin_impl(&db.pool, anon()).await.unwrap();
+        assert_eq!(res.streak_count, 1, "Broken streak must reset to 1");
+        assert!(res.just_incremented, "reset counts as just_incremented");
+        assert_eq!(res.streak_action, "reset");
+    }
+
+    #[tokio::test]
+    async fn checkin_reset_persists_to_store() {
+        let db = TestDb::new().await;
+        let k = anon().to_text();
+
+        db.pool.set_streak(&k, 20, ms_ago(49)).await.unwrap();
+        checkin_impl(&db.pool, anon()).await.unwrap();
+
+        let row = db.pool.get_streak(&k).await.unwrap().unwrap();
+        assert_eq!(row.current_streak, 1);
+    }
+
+    #[tokio::test]
+    async fn response_timestamps_are_consistent() {
+        let db = TestDb::new().await;
+        let before = now_ms();
+        let res = checkin_impl(&db.pool, anon()).await.unwrap();
+        let after = now_ms();
+
+        assert!(
+            res.server_now_epoch_ms >= before && res.server_now_epoch_ms <= after,
+            "server_now_epoch_ms must be within the request window"
+        );
         assert_eq!(
-            res.current_streak.as_deref(),
-            Some("1"),
-            "Broken streak must reset to 1 regardless of prior value"
+            res.next_increment_eligible_at_epoch_ms,
+            res.last_credited_at_epoch_ms + 24 * 60 * 60 * 1000
+        );
+        assert_eq!(
+            res.streak_expires_at_epoch_ms,
+            res.last_credited_at_epoch_ms + 48 * 60 * 60 * 1000
         );
     }
 
     // ── delete_streak_impl ────────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn delete_streak_removes_key_from_store() {
+    async fn delete_streak_removes_record_from_store() {
         let db = TestDb::new().await;
-        db.pool
-            .set_streak(&anon().to_text(), "5", "2025-01-01")
-            .await
-            .unwrap();
+        let k = anon().to_text();
 
+        db.pool.set_streak(&k, 5, ms_ago(1)).await.unwrap();
         delete_streak_impl(&db.pool, anon()).await.unwrap();
 
-        let res = get_streak_impl(&db.pool, anon()).await.unwrap();
-        assert!(res.current_streak.is_none());
-        assert!(res.last_checkin_date.is_none());
+        let row = db.pool.get_streak(&k).await.unwrap();
+        assert!(row.is_none(), "Record must be gone after delete");
     }
 
     #[tokio::test]
@@ -281,30 +344,20 @@ mod streak_impl_tests {
     }
 
     #[tokio::test]
-    async fn get_after_delete_returns_all_none() {
-        let db = TestDb::new().await;
-        let k = anon().to_text();
-        db.pool.set_streak(&k, "3", "2025-01-01").await.unwrap();
-        delete_streak_impl(&db.pool, anon()).await.unwrap();
-
-        let res = get_streak_impl(&db.pool, anon()).await.unwrap();
-        assert!(res.current_streak.is_none());
-        assert!(res.last_checkin_date.is_none());
-    }
-
-    #[tokio::test]
     async fn checkin_after_delete_restarts_streak_at_one() {
         let db = TestDb::new().await;
         let k = anon().to_text();
-        db.pool.set_streak(&k, "10", &days_ago(1)).await.unwrap();
+
+        db.pool.set_streak(&k, 10, ms_ago(25)).await.unwrap();
         delete_streak_impl(&db.pool, anon()).await.unwrap();
 
         let res = checkin_impl(&db.pool, anon()).await.unwrap();
         assert_eq!(
-            res.current_streak.as_deref(),
-            Some("1"),
-            "After delete, a fresh checkin must start at 1"
+            res.streak_count, 1,
+            "After delete, fresh checkin must start at 1"
         );
+        assert!(res.just_incremented);
+        assert_eq!(res.streak_action, "incremented");
     }
 
     // ── Key isolation between users ───────────────────────────────────────────
@@ -312,46 +365,44 @@ mod streak_impl_tests {
     #[tokio::test]
     async fn user_streaks_are_fully_isolated() {
         let db = TestDb::new().await;
-        let k_a = user_a().to_text();
 
-        db.pool.set_streak(&k_a, "5", &days_ago(1)).await.unwrap();
+        db.pool
+            .set_streak(&user_a().to_text(), 5, ms_ago(25))
+            .await
+            .unwrap();
+
         let res_anon = checkin_impl(&db.pool, anon()).await.unwrap();
-        let res_a = get_streak_impl(&db.pool, user_a()).await.unwrap();
+        let row_a = db
+            .pool
+            .get_streak(&user_a().to_text())
+            .await
+            .unwrap()
+            .unwrap();
 
-        assert_eq!(
-            res_anon.current_streak.as_deref(),
-            Some("1"),
-            "Fresh user must start at 1"
-        );
-        assert_eq!(
-            res_a.current_streak.as_deref(),
-            Some("5"),
-            "user_a streak must be unaffected by anon checkin"
-        );
+        assert_eq!(res_anon.streak_count, 1, "Fresh user must start at 1");
+        assert_eq!(row_a.current_streak, 5, "user_a streak must be unaffected");
     }
 
     #[tokio::test]
     async fn delete_only_affects_target_user() {
         let db = TestDb::new().await;
+
         db.pool
-            .set_streak(&user_a().to_text(), "7", "2025-01-01")
+            .set_streak(&user_a().to_text(), 7, ms_ago(1))
             .await
             .unwrap();
         db.pool
-            .set_streak(&anon().to_text(), "3", "2025-01-01")
+            .set_streak(&anon().to_text(), 3, ms_ago(1))
             .await
             .unwrap();
 
         delete_streak_impl(&db.pool, anon()).await.unwrap();
 
-        let res_a = get_streak_impl(&db.pool, user_a()).await.unwrap();
-        let res_anon = get_streak_impl(&db.pool, anon()).await.unwrap();
+        let row_a = db.pool.get_streak(&user_a().to_text()).await.unwrap();
+        let row_anon = db.pool.get_streak(&anon().to_text()).await.unwrap();
 
-        assert_eq!(
-            res_a.current_streak.as_deref(),
-            Some("7"),
-            "user_a must be untouched"
-        );
-        assert!(res_anon.current_streak.is_none(), "anon must be deleted");
+        assert!(row_a.is_some(), "user_a must be untouched");
+        assert_eq!(row_a.unwrap().current_streak, 7);
+        assert!(row_anon.is_none(), "anon must be deleted");
     }
 }
