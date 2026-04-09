@@ -90,11 +90,11 @@ pub async fn checkin(
                 "/metadata/{user_principal}",
                 Some(&user_principal.to_text()),
             );
-            return (
+            (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Error: {}", e),
             )
-                .into_response();
+                .into_response()
         }
     }
 }
