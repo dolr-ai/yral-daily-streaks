@@ -2,7 +2,7 @@ use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::consts::YRAL_AUTH_V2_ACCESS_TOKEN_ISS;
+use crate::consts::{YRAL_AUTH_V2_ACCESS_TOKEN_ISS_1, YRAL_AUTH_V2_ACCESS_TOKEN_ISS_2};
 
 use super::error::Error;
 
@@ -31,7 +31,7 @@ impl YralAuthJwt {
 
     pub fn verify_token(&self, token: &str) -> Result<YralAuthClaim, Error> {
         let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::ES256);
-        validation.set_issuer(&[YRAL_AUTH_V2_ACCESS_TOKEN_ISS]);
+        validation.set_issuer(&[YRAL_AUTH_V2_ACCESS_TOKEN_ISS_1, YRAL_AUTH_V2_ACCESS_TOKEN_ISS_2]);
         validation.validate_aud = false;
 
         let token_message =
