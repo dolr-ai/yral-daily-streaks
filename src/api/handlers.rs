@@ -42,7 +42,7 @@ pub async fn checkin(
         None => {
             crate::sentry_utils::capture_api_error(
                 &Error::AuthTokenMissing,
-                "/metadata/{user_principal}",
+                "/streak/{user_principal}",
                 Some(&user_principal.to_text()),
             );
             return (
@@ -58,7 +58,7 @@ pub async fn checkin(
         Err(_) => {
             crate::sentry_utils::capture_api_error(
                 &Error::AuthTokenInvalid,
-                "/metadata/{user_principal}",
+                "/streak/{user_principal}",
                 Some(&user_principal.to_text()),
             );
             return (
@@ -72,7 +72,7 @@ pub async fn checkin(
     if let Err(e) = state.yral_auth_jwt.verify_token(auth_jwt_token) {
         crate::sentry_utils::capture_api_error(
             &e,
-            "/metadata/{user_principal}",
+            "/streak/{user_principal}",
             Some(&user_principal.to_text()),
         );
         return (
@@ -87,7 +87,7 @@ pub async fn checkin(
         Err(e) => {
             crate::sentry_utils::capture_api_error(
                 &e,
-                "/metadata/{user_principal}",
+                "/streak/{user_principal}",
                 Some(&user_principal.to_text()),
             );
             (

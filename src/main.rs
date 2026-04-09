@@ -52,8 +52,8 @@ async fn main_impl() -> Result<()> {
     // Build the application router with all routes defined here
     let app = Router::new()
         // API routes
-        .route("/streaks/{user_prinicipal}", get(checkin))
-        .route("/streaks/{user_prinicipal}", delete(delete_streak))
+        .route("/streak/{user_prinicipal}", get(checkin))
+        .route("/streak/{user_prinicipal}", delete(delete_streak))
         // OpenAPI/Swagger UI routes
         .route("/explorer/{*tail}", get(get_swagger))
         .route("/explorer/", get(get_swagger_root))
