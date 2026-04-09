@@ -5,6 +5,7 @@ pub mod consts;
 pub mod db_pool;
 pub mod error;
 pub mod middleware;
+pub mod sentry_utils;
 pub mod state;
 pub mod types;
 pub mod utils;
