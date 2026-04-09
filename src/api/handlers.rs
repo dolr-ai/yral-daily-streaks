@@ -1,11 +1,11 @@
 use crate::api::store::StreakStore;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::error::{Error, Result};
+use crate::utils::error::{Error, NullOk, Result};
 use crate::{
     error::ApiResult,
     types::{DeleteStreakRes, StreakResponse},
-    utils::error::{ErrorWrapper, OkWrapper},
+    utils::error::ErrorWrapper,
 };
 use axum::{
     extract::{Path, State},
@@ -17,41 +17,86 @@ use candid::Principal;
 use std::sync::Arc;
 
 #[utoipa::path(
-    post,
+    get,
     path = "/streak/{user_principal}",
     params(
         ("user_principal" = String, Path, description = "User principal ID")
     ),
-    request_body = StreakResponse,
     security(
         ("bearer_auth" = [])
     ),
     responses(
-        (status = 200, description = "Streak updated successfully", body = OkWrapper<StreakResponse>),
-        (status = 400, description = "Invalid request", body = ErrorWrapper<StreakResponse>),
-        (status = 401, description = "Unauthorized", body = ErrorWrapper<StreakResponse>),
-        (status = 500, description = "Internal server error", body = ErrorWrapper<StreakResponse>)
+        (status = 200, description = "Streak updated successfully", body = StreakResponse),
+        (status = 400, description = "Invalid request", body = String),
+        (status = 401, description = "Unauthorized", body = String),
+        (status = 500, description = "Internal server error", body = String)
     )
 )]
 pub async fn checkin(
     State(state): State<Arc<AppState>>,
     Path(user_principal): Path<Principal>,
     headers: HeaderMap,
-) -> Result<Json<ApiResult<StreakResponse>>> {
-    let Some(auth_header) = headers.get("Authorization") else {
-        return Err(Error::AuthTokenMissing);
+) -> impl IntoResponse {
+    let auth_header = match headers.get("Authorization") {
+        Some(header) => header,
+        None => {
+            crate::sentry_utils::capture_api_error(
+                &Error::AuthTokenMissing,
+                "/metadata/{user_principal}",
+                Some(&user_principal.to_text()),
+            );
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Missing Authorization Header",
+            )
+                .into_response();
+        }
     };
 
-    let auth_jwt_token = auth_header
-        .to_str()
-        .map_err(|_| Error::AuthTokenInvalid)?
-        .trim_start_matches("Bearer ");
+    let auth_jwt_token = match auth_header.to_str() {
+        Ok(t) => t.trim_start_matches("Bearer "),
+        Err(_) => {
+            crate::sentry_utils::capture_api_error(
+                &Error::AuthTokenInvalid,
+                "/metadata/{user_principal}",
+                Some(&user_principal.to_text()),
+            );
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "Invalid Header Encoding",
+            )
+                .into_response();
+        }
+    };
 
-    let _jwt_claim = state.yral_auth_jwt.verify_token(auth_jwt_token)?;
+    if let Err(e) = state.yral_auth_jwt.verify_token(auth_jwt_token) {
+        crate::sentry_utils::capture_api_error(
+            &e,
+            "/metadata/{user_principal}",
+            Some(&user_principal.to_text()),
+        );
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            format!("Unauthorized: {}", e),
+        )
+            .into_response();
+    }
 
-    let response = checkin_impl(&state.db, user_principal).await?;
-
-    Ok(Json(Ok(response)))
+    match checkin_impl(&state.db, user_principal).await {
+        Ok(response) => Json(response).into_response(),
+        Err(e) => {
+            crate::sentry_utils::capture_api_error(
+                &e,
+                "/metadata/{user_principal}",
+                Some(&user_principal.to_text()),
+            );
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Error: {}", e),
+            )
+                .into_response()
+        }
+    }
 }
 
 #[utoipa::path(
@@ -60,15 +105,14 @@ pub async fn checkin(
     params(
         ("user_principal" = String, Path, description = "User principal ID")
     ),
-    request_body = StreakResponse,
     security(
         ("bearer_auth" = [])
     ),
     responses(
-        (status = 200, description = "Streak deleted successfully", body = OkWrapper<StreakResponse>),
-        (status = 400, description = "Invalid request", body = ErrorWrapper<StreakResponse>),
-        (status = 401, description = "Unauthorized", body = ErrorWrapper<StreakResponse>),
-        (status = 500, description = "Internal server error", body = ErrorWrapper<StreakResponse>)
+        (status = 200, description = "Streak deleted successfully", body = NullOk),
+        (status = 400, description = "Invalid request", body = ErrorWrapper<Error>),
+        (status = 401, description = "Unauthorized", body = ErrorWrapper<Error>),
+        (status = 500, description = "Internal server error", body = ErrorWrapper<Error>)
     )
 )]
 pub async fn delete_streak(

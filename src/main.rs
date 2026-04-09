@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    routing::{delete, get, post},
+    routing::{delete, get},
     Router,
 };
 use sentry_tower::{NewSentryLayer, SentryHttpLayer};
@@ -52,7 +52,7 @@ async fn main_impl() -> Result<()> {
     // Build the application router with all routes defined here
     let app = Router::new()
         // API routes
-        .route("/streaks/{user_prinicipal}", post(checkin))
+        .route("/streaks/{user_prinicipal}", get(checkin))
         .route("/streaks/{user_prinicipal}", delete(delete_streak))
         // OpenAPI/Swagger UI routes
         .route("/explorer/{*tail}", get(get_swagger))
