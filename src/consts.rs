@@ -8,4 +8,4 @@ pub static CLAIMS: Lazy<Claims> = Lazy::new(|| Claims {
     exp: 317125598072, // TODO: To be changed later when expiring tokens periodically
 });
 
-pub const YRAL_AUTH_V2_ACCESS_TOKEN_ISS: &str = "https://auth.yral.com";
+pub const EXPECTED_AUTH_ISSUERS: &[&str] = &["https://auth.yral.com", "https://auth.dolr.ai"];

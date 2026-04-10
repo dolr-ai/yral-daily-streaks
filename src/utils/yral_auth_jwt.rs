@@ -2,7 +2,7 @@ use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::consts::YRAL_AUTH_V2_ACCESS_TOKEN_ISS;
+use crate::consts::EXPECTED_AUTH_ISSUERS;
 
 use super::error::Error;
 
@@ -31,15 +31,16 @@ impl YralAuthJwt {
 
     pub fn verify_token(&self, token: &str) -> Result<YralAuthClaim, Error> {
         let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::ES256);
-        validation.set_issuer(&[YRAL_AUTH_V2_ACCESS_TOKEN_ISS]);
+        validation.set_issuer(EXPECTED_AUTH_ISSUERS);
+        validation.set_required_spec_claims(&["exp", "sub", "iss"]);
         validation.validate_aud = false;
 
         let token_message =
             jsonwebtoken::decode::<YralAuthClaim>(token, &self.decoding_key, &validation)
                 .map_err(Error::Jwt)?;
 
-        if token_message.claims.ext_is_anonymous {
-            return Err(Error::AuthTokenInvalid);
+        if token_message.claims.sub.is_empty() {
+            return Err(Error::Unknown("Invalid token: missing sub".to_string()));
         }
 
         Ok(token_message.claims)
