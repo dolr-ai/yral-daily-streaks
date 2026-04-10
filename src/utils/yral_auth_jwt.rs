@@ -32,7 +32,7 @@ impl YralAuthJwt {
     pub fn verify_token(&self, token: &str) -> Result<YralAuthClaim, Error> {
         let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::ES256);
         validation.set_issuer(EXPECTED_AUTH_ISSUERS);
-        validation.set_required_spec_claims(&["exp", "sub", "iss"]); 
+        validation.set_required_spec_claims(&["exp", "sub", "iss"]);
         validation.validate_aud = false;
 
         let token_message =
